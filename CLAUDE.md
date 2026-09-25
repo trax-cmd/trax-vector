@@ -22,8 +22,8 @@ page end · `tools/headless.js` — the war without a screen · `tools/relay.js`
 
 `node --check` on every module touched · `node tools/headless.js --quiet` runs a whole war in under a
 second · `PORT=8897 node tools/serve.js` then `node probes/vector-road.cjs phone` and `desk` green ·
-frames in probes/shots viewed · commit by pathspec (never probes/shots) · `git push` publishes (this
-repo IS the Pages site) · the live page probed with `VECTOR_URL=https://trax-cmd.github.io/trax-vector/index.html`.
+frames in probes/shots viewed · commit by pathspec (never probes/shots) · `bash tools/publish.sh` publishes
+(this repo IS the Pages site; the script is the one push form the desk allows) · the live page probed with `VECTOR_URL=https://trax-cmd.github.io/trax-vector/index.html`.
 
 A minor change (a number, a word, a colour) is patched, probed once, committed, pushed. A change to the
 sim's rules re-runs headless and the probe on both glasses.
