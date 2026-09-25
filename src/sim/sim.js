@@ -99,7 +99,7 @@ export function createSim(opts = {}) {
     const k = kinds[U.kind[i]], team = U.team[i];
     U.alive[i] = 0; U.count[team]--; U.free.push(i);
     if (byTeam >= 0 && byTeam !== team) { S.stats.kills[byTeam]++; if (byKind >= 0) S.stats.roleKills[byTeam][roleOf(byKind) * 6 + k.shape]++; }
-    ev({ t: 'death', x: U.x[i], y: U.y[i], team, kind: k.index, r: k.r });
+    ev({ t: 'death', x: U.x[i], y: U.y[i], team, kind: k.index, r: k.r, by: byKind === undefined ? -1 : byKind });
     if (k.traits.split && k.splitIndex >= 0) {
       for (let j = 0; j < k.splitN; j++) {
         const a = rng() * 6.283, d = 6 + rng() * 14;

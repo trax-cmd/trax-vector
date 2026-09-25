@@ -25,9 +25,13 @@ Working title VECTOR. The name is his call (open, below).
   enemy stronghold to aim; tap a stronghold of yours to muster from it. Hold a card to pour. Digits 1–8.
 - **THE HARVEST, SEEN (v0.3).** Every well you hold sends a mote of light home twice a second; the strip
   reads your energy and its rate, and the enemy's. Before your first muster the open wells breathe.
-- **THE COACH (v0.3).** One gold line under the strip says the one thing to do next, from the state of
-  the field: claim, answer what they field, take their wells, fortify, pour on their weakest stronghold.
-  Never a lesson, never a pop-up.
+- **THE COACH (v0.3), WHO POINTS (v0.5).** The coach does not talk; it points. The card to tap GLOWS.
+  The place the battalion will go is MARKED on the field with a gold ring and a word (CLAIM, ANSWER
+  HERE, HOLD, TAKE, BREAK, FORTIFY). The line under the strip is four words with a dim reason under it:
+  TAP THE GLOWING CARD · it marches to the marked well. Tapping the glowing card with nothing aimed at
+  goes exactly where the mark is. Following the coach is one tap. Never a lesson, never a pop-up.
+- **THE FIELD SPEAKS (v0.5).** When a shape kills a shape it beats, the field says so where it happened,
+  in the killer's colour: ▲ BEATS ⬢. The strategy is read off the fight, not off a table.
 - **THE FORT (v0.3).** Aim at a well of yours and a plaque offers FORTIFY for 150: a WARDEN ring stands
   on it (shielded, regenerating, pulsing) and the well pays 8 a second instead of 5. Lose the well and
   the fort is lost. Collecting is one choice, managing is another: expand, fortify, or attack.
@@ -317,3 +321,13 @@ the headless numbers printed, no page error. Nothing is claimed that the probe d
   shapes, their target and the answer, and the voice sounds the alarm. Proof: vector-road.cjs at the
   phone glass and on a desk (the temper chip reads NORMAL and the state agrees; the rest as before),
   tools/tempers.js, headless wars resolve at 191 s and 239 s with peaks of 587 and 881 bodies.
+
+- **2026-09-24 · THE POINTER (v0.5.0).** His word, before playing v0.4: "I didn't see the strategy in it.
+  I didn't know what I was doing. Some instructions were coming up. I couldn't really follow them." So
+  the instructions stopped being sentences. The coach points: the card to tap glows, the place is marked
+  on the field with a word, the line is four words with a dim reason, and the glowing card goes where the
+  mark is. When a shape beats a shape the field says so where it happened. The coached player reads the
+  same advice and the yardstick held (EASY 4-0, NORMAL 2-2, HARD 0-4 over four seeds). Proof:
+  vector-road.cjs at the phone glass and on a desk (at the bell the label reads TAP THE GLOWING CARD, one
+  card glows, the mark reads CLAIM; the glowing card sends its battalion to the well the coach pointed at;
+  the rest as before), frames viewed.

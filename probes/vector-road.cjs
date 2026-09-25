@@ -23,15 +23,22 @@ async function waitServer() { for (let i = 0; i < 40; i++) { try { await new Pro
   const boot = await p.evaluate(() => { const V = window.VECTOR; if (!V) return null; return { seed: V.seed, towers: V.sim.T.n, tower: V.state.team, chosen: V.state.tower, alive: [V.sim.U.count[0], V.sim.U.count[1]], energy: V.sim.energy.slice(), fps: V.fps, counts: V.counts, gl: !!document.querySelector('#field').getContext('webgl2') }; });
   console.log(GLASS, 'BOOT', JSON.stringify(boot));
   const temper = await p.evaluate(() => ({ chip: document.getElementById('vtemper').textContent, state: window.VECTOR && window.VECTOR.state.temper, every: window.VECTOR && window.VECTOR.bots[0] && window.VECTOR.bots[0].team })); console.log('the temper', JSON.stringify(temper)); if (temper.chip !== 'NORMAL' || temper.state !== 'normal') fails.push('the temper chip does not read NORMAL: ' + JSON.stringify(temper));
-  const coach0 = await p.evaluate(() => document.getElementById('hint').textContent); console.log('the coach at the bell:', JSON.stringify(coach0)); if (!/WELL/.test(coach0)) fails.push('the coach line at the bell does not point at the wells');
+  const coach0 = await p.evaluate(() => ({ label: (document.querySelector('#hint b') || {}).textContent, why: (document.querySelector('#hint span') || {}).textContent, glowing: [...document.querySelectorAll('.card.go')].map((c) => c.dataset.k), mark: (document.querySelector('.lbl.mark') || {}).textContent, markShown: document.querySelector('.lbl.mark') ? getComputedStyle(document.querySelector('.lbl.mark')).display !== 'none' : false }));
+  console.log('the coach at the bell:', JSON.stringify(coach0));
+  if (!coach0.label || coach0.label.length > 28) fails.push('the coach label is not a few words: ' + coach0.label);
+  if (!/GLOWING CARD/.test(coach0.label || '')) fails.push('the coach at the bell does not say to tap the glowing card');
+  if (!coach0.glowing || coach0.glowing.length < 1) fails.push('no card glows at the bell');
+  if (!coach0.markShown || coach0.mark !== 'CLAIM') fails.push('the mark on the field does not read CLAIM at the bell: ' + JSON.stringify(coach0));
   if (!boot) { fails.push('window.VECTOR missing (module failed?)'); }
   else { if (boot.towers !== 10) fails.push('towers ' + boot.towers); if (!boot.gl) fails.push('no webgl2 context'); }
   const tap = async (x, y) => { if (GLASS === 'phone') await p.touchscreen.tap(x, y); else await p.mouse.click(x, y); };
   // 0. a card with nothing aimed at: the battalion goes to the nearest open well, from the nearest stronghold
-  const first = await p.evaluate(() => { const c = document.querySelector('.card'); const r = c.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  const first = await p.evaluate(() => { const c = document.querySelector('.card.go') || document.querySelector('.card'); const r = c.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, id: c.dataset.k }; });
+  const advisedBefore = await p.evaluate(() => window.VECTOR.state.advice && window.VECTOR.state.advice.target); console.log('the glowing card', first.id, '· the coach points at', advisedBefore);
   await tap(first.x, first.y); await sleep(400);
   const blind = await p.evaluate(() => { const V = window.VECTOR, U = V.sim.U; let g = -1, n = 0; for (let i = 0; i < U.hi; i++) if (U.alive[i] && U.team[i] === 0) { g = U.goal[i]; n++; } return { goal: g, n, from: V.state.tower, coach: document.getElementById('hint').textContent }; });
-  console.log('a blind card ->', JSON.stringify(blind)); if (blind.goal < 1000) fails.push('a blind card did not send the battalion to a well (goal ' + blind.goal + ')'); if (!/MARCHING|WELL/.test(blind.coach)) fails.push('the coach did not follow the first muster');
+  console.log('a blind card ->', JSON.stringify(blind)); if (blind.goal < 1000) fails.push('a blind card did not send the battalion to a well (goal ' + blind.goal + ')');
+  const glowGoal = await p.evaluate(() => window.VECTOR.state.advice && window.VECTOR.state.advice.target); console.log('the coach pointed at', glowGoal, 'and the battalion went to', blind.goal);
   // 1. a tower of mine by a tap (the northern one), then an enemy tower to aim
   const toScreen = async (t) => p.evaluate((t) => { const V = window.VECTOR, c = document.getElementById('field'); return [c.clientWidth / 2 + (V.sim.T.x[t] - V.cam.x) * V.cam.zoom, c.clientHeight / 2 + (V.sim.T.y[t] - V.cam.y) * V.cam.zoom]; }, t);
   const [tx0, ty0] = await toScreen(0); await tap(tx0, ty0); await sleep(200);
@@ -46,6 +53,7 @@ async function waitServer() { for (let i = 0; i < 40; i++) { try { await new Pro
   const card = await p.evaluate(() => { const c = document.querySelector('.card'); const r = c.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, id: c.dataset.k, n: document.querySelectorAll('.card').length, words: c.textContent.replace(/s+/g, ' ').trim() }; });
   console.log('the first card', JSON.stringify(card)); if (card.n !== 8) fails.push('the deck has ' + card.n + ' cards, not 8'); if (!/beat/.test(card.words)) fails.push('the card does not say what it beats');
   console.log('the card’s promise line:', JSON.stringify(await p.evaluate(() => document.querySelector('.card .w').textContent)));
+  if (advisedBefore >= 1000 && blind.goal !== advisedBefore) fails.push('the glowing card did not go where the coach pointed (' + advisedBefore + ' vs ' + blind.goal + ')');
   const e0 = await p.evaluate(() => window.VECTOR.sim.energy[0]);
   await tap(card.x, card.y); await sleep(300);
   const after = await p.evaluate(() => ({ energy: window.VECTOR.sim.energy[0], alive: window.VECTOR.sim.U.count[0], deployed: window.VECTOR.state.deployed }));

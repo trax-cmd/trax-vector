@@ -12,6 +12,8 @@ import { createInput } from './ui/input.js';
 import { createHud } from './ui/hud.js';
 import { createRelayClient } from './ui/relay.js';
 import { createSound } from './ui/sound.js';
+import { advise } from './ai/coach.js';
+import { BEATS, ROLE_GLYPH } from './sim/library.js';
 
 const q = new URLSearchParams(location.search);
 const seed = +(q.get('seed') || ((Date.now() / 1000) | 0) % 100000);
@@ -52,7 +54,7 @@ function nearestOwnGoal(musters) { let cx = 0, cy = 0; for (const m of musters) 
 function marchingTo(goal) { for (let i = 0; i < U.hi; i++) if (U.alive[i] && U.team[i] === state.team && U.goal[i] === goal) return true; return false; }
 function deploy(i) {
   let goal = state.goal;
-  if (!sim.goalPoint(goal) || (goal >= 0 && goal < 1000 && T.team[goal] === state.team)) goal = defaultGoal();
+  if (!sim.goalPoint(goal) || (goal >= 0 && goal < 1000 && T.team[goal] === state.team)) goal = (state.advice && state.advice.kind !== 'fortify' && sim.goalPoint(state.advice.target)) ? state.advice.target : defaultGoal();   // nothing aimed at: the glowing card goes where the coach points
   if (goal < 0) return false;
   const gp = sim.goalPoint(goal);
   const from = (state.tower >= 0 && T.alive[state.tower] && T.team[state.tower] === state.team && state.towerPinned) ? state.tower : nearestOwnTower(gp.x, gp.y);
@@ -101,6 +103,9 @@ function paint(out) {
     if (t === state.tower && alive && T.team[t] === state.team) out.body(T.x[t], T.y[t], sim.o.towerR * 1.35, 4, 1, 1, 1, 0.25 + 0.2 * Math.sin(now * 5), 0, 0.3);
     if (t === state.goal && alive) out.body(T.x[t], T.y[t], sim.o.towerR * 1.2, 5, 1, 0.9, 0.5, 0.5 + 0.3 * Math.sin(now * 6), now, 0.4);
   }
+  // THE MARK: where the coach points, a slow gold ring and a diamond, until the order is given
+  const adv = (state.alarm && performance.now() < state.alarm.until) ? { target: state.alarm.target } : state.advice;
+  if (adv && !sim.result) { const gp = sim.goalPoint(adv.target); if (gp) { const pulse = 0.5 + 0.5 * Math.sin(now * 4); out.body(gp.x, gp.y, gp.r * (1.6 + 0.5 * pulse), 4, 1, 0.85, 0.4, 0.35 + 0.25 * pulse, 0, 0.5); out.body(gp.x, gp.y, gp.r * 0.9, 5, 1, 0.85, 0.4, 0.5, now * 1.5, 0.6); labels.mark = gp; } } else labels.mark = null;
   // the last order, drawn: a thread from the stronghold to where the battalion was sent, fading over four seconds
   const age = (performance.now() - state.lastGoalAt) / 1000;
   if (state.lastGoal !== undefined && age < 4 && state.tower >= 0) { const gp = sim.goalPoint(state.lastGoal); if (gp) { const a = (1 - age / 4) * 0.5, c = colorOf(state.team, 'base'); out.line(T.x[state.tower], T.y[state.tower], gp.x, gp.y, 3, c[0], c[1], c[2], a); } }
@@ -124,6 +129,19 @@ function paint(out) {
   vfx.fill(out);
 }
 
+// ---- THE LABELS: a few words on the field, in DOM so they read on any glass - the coach's mark and the shape that beat a shape
+const labels = (() => {
+  const layer = document.getElementById('labels'), live = [], markEl = document.createElement('div'); markEl.className = 'lbl mark'; layer.appendChild(markEl);
+  const toScreen = (x, y) => [canvas.clientWidth / 2 + (x - cam.x) * cam.zoom, canvas.clientHeight / 2 + (y - cam.y) * cam.zoom];
+  function add(x, y, text, team) { if (live.length >= 4) { const old = live.shift(); old.el.remove(); } const el = document.createElement('div'); el.className = 'lbl t' + team; el.textContent = text; layer.appendChild(el); live.push({ el, x, y, at: performance.now() }); }
+  function sync() {
+    const now = performance.now();
+    for (let i = live.length - 1; i >= 0; i--) { const l = live[i], age = (now - l.at) / 1000; if (age > 1.8) { l.el.remove(); live.splice(i, 1); continue; } const [sx, sy] = toScreen(l.x, l.y - age * 40); l.el.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -100%)`; l.el.style.opacity = age < 0.2 ? age / 0.2 : Math.max(0, 1 - (age - 1) / 0.8); }
+    if (labels.mark && (state.advice || state.alarm)) { const a = (state.alarm && now < state.alarm.until) ? { label: 'HOLD HERE' } : state.advice; const [sx, sy] = toScreen(labels.mark.x, labels.mark.y - labels.mark.r * 1.9); markEl.textContent = a.kind === 'claim' || a.kind === 'first' ? 'CLAIM' : a.kind === 'fortify' ? 'FORTIFY' : a.kind === 'hold' ? 'HOLD' : a.kind === 'answer' ? 'ANSWER HERE' : a.kind === 'take' ? 'TAKE' : a.kind === 'push' ? 'BREAK' : a.label; markEl.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -100%)`; markEl.style.display = 'block'; } else markEl.style.display = 'none';
+  }
+  return { add, sync, mark: null, lastAt: 0 };
+})();
+
 // ---- the loop
 let last = performance.now(), acc = 0, fps = 0, fpsN = 0, fpsT = 0, snapAt = 0, flowAt = 0;
 function loop(now) {
@@ -135,7 +153,8 @@ function loop(now) {
       sim.step(); vfx.take(sim.events);
       for (const e of sim.events) {
         if (e.t === 'death' || e.t === 'towerHit' || e.t === 'capture') { const w = e.t === 'death' ? 1 : 6; heat.x += (e.x - heat.x) * 0.02 * w; heat.y += (e.y - heat.y) * 0.02 * w; heat.hot = Math.min(2, heat.hot + 0.08 * w); }
-        if (e.t === 'muster' && e.team !== state.team) { state.musters.push({ at: performance.now(), role: e.role, x: e.x, y: e.y }); state.musters = state.musters.filter((m) => performance.now() - m.at < 3000); if (state.musters.length >= 3 && !(state.alarm && performance.now() < state.alarm.until)) { const roles = state.musters.map((m) => m.role); const counts = [0, 0, 0, 0, 0, 0]; for (const r of roles) counts[r]++; let top = 0; for (let r = 1; r < 6; r++) if (counts[r] > counts[top]) top = r; const g = sim.goalPoint(nearestOwnGoal(state.musters)); state.alarm = { until: performance.now() + 6000, roles: [...new Set(roles)], top, where: g ? g.name : 'YOUR LINE' }; sound.play('alarm'); } }
+        if (e.t === 'muster' && e.team !== state.team) { /* three musters in three seconds is a wave: the coach is overruled, the alarm sounds */ state.musters.push({ at: performance.now(), role: e.role, x: e.x, y: e.y }); state.musters = state.musters.filter((m) => performance.now() - m.at < 3000); if (state.musters.length >= 3 && !(state.alarm && performance.now() < state.alarm.until)) { const roles = state.musters.map((m) => m.role); const counts = [0, 0, 0, 0, 0, 0]; for (const r of roles) counts[r]++; let top = 0; for (let r = 1; r < 6; r++) if (counts[r] > counts[top]) top = r; const g = sim.goalPoint(nearestOwnGoal(state.musters)); const tg = nearestOwnGoal(state.musters); state.alarm = { until: performance.now() + 6000, roles: [...new Set(roles)], top, where: g ? g.name : 'YOUR LINE', target: tg }; sound.play('alarm'); } }
+        if (e.t === 'death' && e.by >= 0) { const a = kinds[e.by].shape, b = kinds[e.kind].shape; if (BEATS[a].includes(b) && performance.now() - labels.lastAt > 1400) { labels.lastAt = performance.now(); labels.add(e.x, e.y, `${ROLE_GLYPH[a]} BEATS ${ROLE_GLYPH[b]}`, 1 - e.team); } }
         if (e.t === 'death') sound.play('death', e.team); else if (e.t === 'capture') sound.play(e.team === state.team ? 'capture' : (e.from === state.team ? 'lost' : 'capture'), e.team); else if (e.t === 'towerHit') { if (e.team === state.team) sound.play('towerHit', e.team); } else if (e.t === 'towerDown') sound.play('towerDown', e.team); else if (e.t === 'explode') sound.play('explode', e.team); else if (e.t === 'fortify') { if (e.team !== state.team) sound.play('fortify', e.team); } else if (e.t === 'end') sound.play(e.winner === state.team ? 'win' : 'lose');
       }
       heat.hot *= 0.985;
@@ -143,13 +162,13 @@ function loop(now) {
     }
     if (steps === 4) acc = 0;
   }
-  if (sim.tick >= snapAt) { snapAt = sim.tick + 30; const s = sim.snapshot(); state.snap = s; state.fielded = s.fielded; state.threat = s.towers.map((t) => t.threat); }
+  if (sim.tick >= snapAt) { snapAt = sim.tick + 30; const s = sim.snapshot(); state.snap = s; state.fielded = s.fielded; state.threat = s.towers.map((t) => t.threat); state.advice = advise(sim, state.team, s); }
   // THE HARVEST, seen: every well you hold sends a mote of light home twice a second
   if (now - flowAt > 500 && !sim.result) { flowAt = now; for (let w = 0; w < WL.n; w++) { const o = WL.owner[w]; if (o < 0) continue; let best = -1, bd = Infinity; for (let t = 0; t < T.n; t++) { if (T.team[t] !== o || !T.alive[t]) continue; const dx = T.x[t] - WL.x[w], dy = T.y[t] - WL.y[w], d = dx * dx + dy * dy; if (d < bd) { bd = d; best = t; } } if (best >= 0) vfx.flow(WL.x[w], WL.y[w], T.x[best], T.y[best], colorOf(o, 'base'), WL.fort[w] ? 2 : 1); } }
   if (state.view === 'whole') fitWhole(); else if (state.view === 'action') followAction();
   vfx.update(dt);
   R.frame(cam, sim.o.W, sim.o.H, paint);
-  hud.sync(now);
+  hud.sync(now); labels.sync();
   document.getElementById('vwhole').classList.toggle('on', state.view === 'whole'); document.getElementById('vaction').classList.toggle('on', state.view === 'action');
   fpsN++; fpsT += dt; if (fpsT >= 1) { fps = fpsN / fpsT; fpsN = 0; fpsT = 0; }
   requestAnimationFrame(loop);

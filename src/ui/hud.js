@@ -25,11 +25,20 @@ export function createHud(sim, state, deploy, fortify) {
   });
   fort.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fortify(); });
   let dim = '', lastStrip = 0, lastCoach = '', lastPrice = -9999;
-  // THE COACH: one sentence, from the field, never a lesson - the same advice the coached player acts on (ai/coach.js); a wave alarm outranks it for five seconds
+  // THE COACH POINTS: a few words, a dim reason, the card to tap glows, the place is marked on the field (main.js paints the mark from state.advice)
   function coach() {
-    if (sim.result) return '';
-    if (state.alarm && performance.now() < state.alarm.until) { const roles = state.alarm.roles.map((q) => ROLE_GLYPH[q]).join(' '); const top = state.alarm.top; const ans = top >= 0 ? [0, 1, 2, 3, 4, 5].filter((q) => BEATS[q].includes(top)).map((q) => ROLE_GLYPH[q] + ' ' + ROLES[q]).join(' OR ') : ''; return `A WAVE IS COMING ${roles} → ${state.alarm.where} — ${ans ? 'ANSWER WITH ' + ans + ' THERE' : 'HOLD IT'}`; }
-    const a = advise(sim, state.team, state.snap); return a ? a.text : '';
+    if (sim.result) return null;
+    if (state.alarm && performance.now() < state.alarm.until) { const top = state.alarm.top; const answers = top >= 0 ? [0, 1, 2, 3, 4, 5].filter((q) => BEATS[q].includes(top)) : []; return { kind: 'alarm', target: state.alarm.target, answers, label: 'A WAVE IS COMING', why: `${state.alarm.roles.map((q) => ROLE_GLYPH[q]).join(' ')} → ${state.alarm.where} · ${answers.length ? answers.map((q) => ROLE_GLYPH[q]).join(' ') + ' beats it · tap the glowing card' : 'hold it'}` }; }
+    return state.advice;
+  }
+  // which cards glow for an advice: the answers if it names any, else the cheapest for a claim, else the dearest you can afford
+  function glowing(a) {
+    if (!a) return [];
+    const e = sim.energy[state.team];
+    if (a.answers && a.answers.length) { const fit = deck.map((b, i) => [b, i]).filter(([b]) => a.answers.includes(b.role) && sim.price(b) <= e); if (fit.length) return fit.map(([, i]) => i); }
+    if (a.kind === 'fortify') return [];
+    if (a.kind === 'claim' || a.kind === 'first') { let bi = -1, bc = Infinity; deck.forEach((b, i) => { const c = sim.price(b); if (c < bc) { bc = c; bi = i; } }); return bi >= 0 && bc <= e ? [bi] : []; }
+    let bi = -1, bc = -1; deck.forEach((b, i) => { const c = sim.price(b); if (c <= e && c > bc) { bc = c; bi = i; } }); return bi >= 0 ? [bi] : [];
   }
   function sync(now) {
     const e = sim.energy[state.team], T = sim.T, WL = sim.WL;
@@ -52,7 +61,9 @@ export function createHud(sim, state, deploy, fortify) {
         if (order.length) { const top = order[0]; answer = [0, 1, 2, 3, 4, 5].filter((q) => BEATS[q].includes(top)).map((q) => `<b class="r${q}">${ROLE_GLYPH[q]}</b> ${ROLES[q]}`).join(' · '); }
       }
       strip.innerHTML = `<span class="a">ENERGY ${Math.floor(e)} <i>+${Math.round(sim.income[state.team])}/s</i></span><span>WELLS ${wm}<i>/${WL.n}</i> · STRONGHOLDS ${mine}<i> ${Math.round(mhp)}</i></span><span class="c">${m}:${s < 10 ? '0' : ''}${s} <i>${(state.temper || 'normal').toUpperCase()}</i></span><span class="b">THEY ${theirs}<i> ${Math.round(thp)}</i> · WELLS ${wt} <i>+${Math.round(sim.income[1 - state.team])}/s</i></span><span class="k">THEY FIELD ${they || '—'}</span><span class="k">ANSWER ${answer || '—'}</span>`;
-      const line = coach(); if (line !== lastCoach) { lastCoach = line; hint.textContent = line; hint.style.display = line ? 'block' : 'none'; }
+      const a = coach(); const line = a ? a.label + '|' + a.why : '';
+      if (line !== lastCoach) { lastCoach = line; hint.innerHTML = a ? `<b>${a.label}</b><span>${a.why}</span>` : ''; hint.style.display = a ? 'block' : 'none'; }
+      const go = new Set(glowing(a)); cards.forEach((c, i) => c.classList.toggle('go', go.has(i)));
       // the fortify plaque: a well of yours is aimed at and not yet fortified
       const g = state.goal; const w = g >= 1000 ? g - 1000 : -1;
       const show = w >= 0 && WL.owner[w] === state.team && !WL.fort[w] && !sim.result;
