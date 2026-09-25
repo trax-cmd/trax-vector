@@ -37,7 +37,7 @@ void main() {
   float core = 1.0 - smoothstep(-aa, aa, d);
   float rim = 1.0 - smoothstep(0.0, 0.16 + aa, abs(d));
   float glow = exp(-max(d, 0.0) * (3.6 - 2.2 * vGlow)) * vGlow;
-  float a = (core * 0.5 + rim * 0.95 + glow * 0.85) * vCol.a;
+  float a = (core * 0.82 + rim * 0.9 + glow * 0.85) * vCol.a;   // a filled body: only the RING family is hollow, by its own formula
   o = vec4(vCol.rgb * a, a);
 }`;
 const LINE_VS = `#version 300 es
