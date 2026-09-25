@@ -202,3 +202,7 @@ the headless numbers printed, no page error. Nothing is claimed that the probe d
   green at the phone glass and on a desk (Chromium, WebGL2 through SwiftShader: boot with no error, a tap
   chooses a tower, a tap aims, a card deploys and charges, the east captain fields twenty-nine bodies in
   eleven seconds, bodies fall, sixty frames a second); the headless table above; frames viewed.
+  THE WIRE, proven the same day (probes/vector-wire.cjs): the relay up, a page whose east side takes its
+  orders from it, one command posted from outside (`{op:"deploy", team:1, tower:7, kind:"BLOCK", goal:2}`)
+  moved a body in the running match within a second, the snapshot came back through `/state` at tick 120,
+  a bad command was refused. Live at https://trax-cmd.github.io/trax-vector/ and probed there.
