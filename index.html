@@ -27,6 +27,7 @@
   #views button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--pane); color: var(--dim); font: 700 10px ui-monospace, Menlo, monospace; letter-spacing: .12em; cursor: pointer; }
   #views button.on { color: var(--gold); border-color: var(--gold); }
   #endline { max-width: 90vw; line-height: 1.7; }
+  @media (max-width: 1000px) { #strip { font-size: 10px; gap: 10px; row-gap: 1px; flex-wrap: wrap; padding: 6px 10px; } #hint { top: 58px; font-size: 10px; } #views { top: 46px; } #stamp { top: 46px; } }
   #hint { position: fixed; left: 50%; top: 44px; transform: translateX(-50%); padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--pane); color: var(--ink); font-size: 11px; letter-spacing: .06em; pointer-events: none; white-space: nowrap; }
   #end, #nogl { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(5,6,13,0.78); z-index: 20; text-align: center; }
   #endword { font-size: 34px; font-weight: 900; letter-spacing: .25em; color: var(--gold); }
