@@ -22,6 +22,7 @@ async function waitServer() { for (let i = 0; i < 40; i++) { try { await new Pro
   await sleep(1500);
   const boot = await p.evaluate(() => { const V = window.VECTOR; if (!V) return null; return { seed: V.seed, towers: V.sim.T.n, tower: V.state.team, chosen: V.state.tower, alive: [V.sim.U.count[0], V.sim.U.count[1]], energy: V.sim.energy.slice(), fps: V.fps, counts: V.counts, gl: !!document.querySelector('#field').getContext('webgl2') }; });
   console.log(GLASS, 'BOOT', JSON.stringify(boot));
+  const temper = await p.evaluate(() => ({ chip: document.getElementById('vtemper').textContent, state: window.VECTOR && window.VECTOR.state.temper, every: window.VECTOR && window.VECTOR.bots[0] && window.VECTOR.bots[0].team })); console.log('the temper', JSON.stringify(temper)); if (temper.chip !== 'NORMAL' || temper.state !== 'normal') fails.push('the temper chip does not read NORMAL: ' + JSON.stringify(temper));
   const coach0 = await p.evaluate(() => document.getElementById('hint').textContent); console.log('the coach at the bell:', JSON.stringify(coach0)); if (!/WELL/.test(coach0)) fails.push('the coach line at the bell does not point at the wells');
   if (!boot) { fails.push('window.VECTOR missing (module failed?)'); }
   else { if (boot.towers !== 10) fails.push('towers ' + boot.towers); if (!boot.gl) fails.push('no webgl2 context'); }

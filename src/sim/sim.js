@@ -11,6 +11,8 @@ import { compileAll } from './units.js';
 import { LIBRARY, BATTALIONS, battalionCost, draft } from './library.js';
 
 export const TICK = 1 / 30;
+// THE TEMPERS: what the captain earns and how often it looks. Set by tools/tempers.js so a person following the coach wins about half at NORMAL.
+export const TEMPERS = { easy: { incomeM: 0.6, every: 120, burst: 1 }, normal: { incomeM: 0.85, every: 75, burst: 2 }, hard: { incomeM: 1.05, every: 45, burst: 3 } };   // incomeM: the captain's income; every: ticks between its looks; burst: musters a look
 export const DEFAULTS = {
   W: 9000, H: 5000,                 // the field, in world units
   towersPerSide: 5, towerHp: 2500, towerR: 90,
@@ -20,6 +22,8 @@ export const DEFAULTS = {
   clock: 600,                       // seconds; at the bell the side with more stronghold hp wins
   capUnits: 30000, capShots: 80000, capMines: 6000, cell: 96,
   seed: 1, deck: 8,
+  temper: 'normal',                 // the east captain's temper (its income multiplier); the west is the person
+  escalate: 1 / 300,                // THE WAR GROWS: income, and the size and price of every muster, scale with the clock - doubled at five minutes, so the late war is the big one and a tap stays a tap
 };
 
 export function createSim(opts = {}) {
@@ -180,17 +184,18 @@ export function createSim(opts = {}) {
       const deck = decks[team];
       const b = typeof cmd.batt === 'string' ? deck.find((q) => q.id === cmd.batt) : deck[cmd.batt | 0];
       if (!b) return false;
-      if (!cmd.free && S.energy[team] < b.cost) return false;
+      const mult = 1 + S.time * o.escalate, price = Math.round(b.cost * mult);
+      if (!cmd.free && S.energy[team] < price) return false;
       const grp = S.grpN++ & 0xffff;
       let big = 0; for (const [kind] of b.body) big = Math.max(big, kinds[kind].r);
-      const list = []; for (const [kind, n] of b.body) for (let i = 0; i < n; i++) list.push(kind);
+      const list = []; for (const [kind, n] of b.body) { const m = Math.max(1, Math.round(n * mult)); for (let i = 0; i < m; i++) list.push(kind); }
       list.sort((a, c) => kinds[c].r - kinds[a].r);   // the heavy bodies take the front slots
       slotBuf.length = 0; slots(list.length, b.form, big * 2.6, slotBuf);
       const ox = T.x[tw] + fx * (o.towerR + 120 + big * 2), oy = T.y[tw] + fy * (o.towerR + 120 + big * 2);
       let born = 0;
       for (let i = 0; i < list.length; i++) { const [f, s] = slotBuf[i]; const px = ox + fx * f - fy * s, py = oy + fy * f + fx * s; if (spawnUnit(team, list[i], px, py, goal, tw, grp) >= 0) born++; }
       if (!born) return false;
-      if (!cmd.free) { S.energy[team] -= b.cost; S.stats.spent[team] += b.cost; }
+      if (!cmd.free) { S.energy[team] -= price; S.stats.spent[team] += price; }
       S.stats.deployed[team] += born; S.stats.musters[team]++;
       ev({ t: 'muster', x: ox, y: oy, team, role: b.role, n: born });
       return true;
@@ -454,6 +459,8 @@ export function createSim(opts = {}) {
     let inc0 = 0, inc1 = 0;
     for (let t = 0; t < T.n; t++) if (T.alive[t]) { if (T.team[t] === 0) inc0 += o.incomePerTower; else inc1 += o.incomePerTower; }
     for (let w = 0; w < WL.n; w++) { const pay = o.wellIncome + (WL.fort[w] ? o.fortifyBonus : 0); if (WL.owner[w] === 0) inc0 += pay; else if (WL.owner[w] === 1) inc1 += pay; }
+    const esc = 1 + S.time * o.escalate, tm = (TEMPERS[o.temper] || TEMPERS.normal).incomeM;
+    inc0 *= esc; inc1 *= esc * tm;
     S.income[0] = inc0; S.income[1] = inc1; S.energy[0] += inc0 * dt; S.energy[1] += inc1 * dt;
     grid.build(U.x, U.y, U.alive, U.hi);
     const hi = U.hi, tick = S.tick;
@@ -477,7 +484,7 @@ export function createSim(opts = {}) {
     let a = 0, b = 0, ha = 0, hb = 0;
     for (let t = 0; t < T.n; t++) { if (T.team[t] === 0) { a += T.alive[t]; ha += T.hp[t]; } else { b += T.alive[t]; hb += T.hp[t]; } }
     if (a === 0 || b === 0) S.result = { winner: a === 0 ? 1 : 0, why: 'towers', tick: S.tick, time: S.time };
-    else if (S.time >= o.clock) S.result = { winner: ha === hb ? -1 : ha > hb ? 0 : 1, why: 'clock', tick: S.tick, time: S.time };
+    else if (S.time >= o.clock) { let wa = 0, wb = 0; for (let w = 0; w < WL.n; w++) { if (WL.owner[w] === 0) wa++; else if (WL.owner[w] === 1) wb++; } S.result = { winner: ha !== hb ? (ha > hb ? 0 : 1) : wa !== wb ? (wa > wb ? 0 : 1) : -1, why: ha !== hb ? 'clock' : 'wells', tick: S.tick, time: S.time }; }
     if (S.result) ev({ t: 'end', winner: S.result.winner });
   }
 
@@ -505,7 +512,7 @@ export function createSim(opts = {}) {
 
   return {
     S, o, kinds, decks, U, P, MN, T, WL, grid, TICK, battById,
-    step, apply, snapshot, nearestEnemyTower, goalPoint: (g) => (goalPoint(g) ? { x: gx, y: gy, r: gr } : null),
+    step, apply, snapshot, nearestEnemyTower, mult: () => 1 + S.time * o.escalate, price: (b) => Math.round(b.cost * (1 + S.time * o.escalate)), goalPoint: (g) => (goalPoint(g) ? { x: gx, y: gy, r: gr, name: g >= 1000 ? 'WELL ' + (g - 1000 + 1) : 'STRONGHOLD ' + ((g % o.towersPerSide) + 1) } : null),
     queue: (cmd) => S.queue.push(cmd),
     get result() { return S.result; },
     get events() { return S.events; },

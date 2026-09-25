@@ -45,6 +45,7 @@ export function createSound() {
       case 'win': tone(440, 880, 0.5, 'sine', 0.3); tone(554, 1108, 0.5, 'sine', 0.25, 0.18); tone(659, 1318, 0.8, 'sine', 0.25, 0.36); break;
       case 'lose': tone(330, 110, 1.4, 'sawtooth', 0.22); tone(220, 70, 1.6, 'sine', 0.25, 0.2); break;
       case 'tap': if (gate('tap', 40)) tone(900, 1200, 0.05, 'sine', 0.08); break;
+      case 'alarm': if (gate('alarm', 4000)) { tone(520, 520, 0.18, 'square', 0.12); tone(390, 390, 0.18, 'square', 0.12, 0.22); tone(520, 520, 0.18, 'square', 0.12, 0.44); } break;
       default: break;
     }
   }

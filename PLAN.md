@@ -33,7 +33,16 @@ Working title VECTOR. The name is his call (open, below).
   the fort is lost. Collecting is one choice, managing is another: expand, fortify, or attack.
 - **THE VOICE (v0.3).** No samples: a few oscillators per event, cold for the west and hot for the
   east - a muster, a well turning, a well lost, a fort, a death, a stronghold struck, a stronghold
-  down, the win, the loss. A SOUND chip mutes it.
+  down, the win, the loss, and the alarm. A SOUND chip mutes it.
+- **THE TEMPERS (v0.4).** EASY, NORMAL, HARD: what the captain earns, how often it looks, how many
+  battalions it musters a look. Set by a yardstick (§4b), not by feel. A chip cycles them; a new match.
+- **THE WAR GROWS (v0.4).** Income, and the size and the price of every muster, scale with the clock:
+  doubled at five minutes, tripled at ten. A tap stays a tap; the battalions get bigger. The late war
+  is the massive one, and no match sits on a full purse waiting for the bell. At the bell, the side
+  with more stronghold health wins; if equal, the side with more wells.
+- **THE ALARM (v0.4).** When the enemy musters three battalions in three seconds, the coach line is
+  overruled for six seconds - A WAVE IS COMING, their shapes, the stronghold of yours it is nearest, and
+  the shapes that answer it - and the voice sounds it.
 - **THE ENERGY.** One pool a side. Every living stronghold pays 6 a second, every well 5; you open with
   800. A battalion costs its price.
 - **THE SHAPES ARE THE ROLES.** ● ORBS are THE SWARM; ■ SQUARES THE ARMOR; ▲ TRIANGLES THE STRIKE;
@@ -165,6 +174,19 @@ At the heart, a three-way cycle: squares beat orbs, orbs beat hexagons, hexagons
 triangle hunts hexagons; the diamond hunts rings and squares; the ring checks orbs. A promise the field
 denies is never printed. The judge runs again whenever a body or a rule changes, and the table moves with it.
 
+## 4b. THE YARDSTICK, AND HOW THE TEMPERS WERE SET
+
+The coach is a function (`src/ai/coach.js`): from the field it returns the one next move - what kind,
+where, against which shape, with which shapes - and the sentence. The glass prints the sentence. THE
+COACHED PLAYER (`src/ai/coached.js`) reads the same advice and does it at a person's pace: one look
+every three seconds, one muster a look, two when the purse is deep. `tools/tempers.js` plays the
+coached player against the captain at each temper over eight seeds. The first reading said the game was
+too hard everywhere (one win of six at NORMAL; the captain looked every 1.5 s and mustered four a look
+while a person taps once in three seconds) and that three matches in eight ran the whole clock with no
+stronghold touched. The tempers were given a burst per look, the war was made to grow with the clock,
+and the reading became: EASY the player wins 8 of 8, NORMAL 5 of 8, HARD 2 of 8, no draws, matches of
+seven to eight minutes. A temper is fair when a person following the game's own coach wins about half.
+
 ## 5. THE GRAMMAR, AND HOW THE VARIETY IS MADE
 
 ```
@@ -286,3 +308,12 @@ the headless numbers printed, no page error. Nothing is claimed that the probe d
   desk (the coach at the bell points at the wells; a blind card sends eight bodies to well 1 from
   stronghold 2 and the coach follows; the plaque appears for a well of mine and a tap fortifies it - a
   warden stands, the energy drops; sound wakes on the first tap; the rest as before), frames viewed.
+
+- **2026-09-24 · THE TEMPERS (v0.4.0).** His word: "iterate again." My decisions: the coach became a
+  function, and a COACHED PLAYER that follows it at a person's pace became the yardstick; three tempers
+  set by that yardstick (EASY 8-0, NORMAL 5-3, HARD 2-6 over eight seeds); the war grows with the clock
+  (income, muster size and price doubled at five minutes) so the late war is the massive one and no match
+  waits on a full purse; the clock breaks a tie by wells; the enemy's waves are announced with their
+  shapes, their target and the answer, and the voice sounds the alarm. Proof: vector-road.cjs at the
+  phone glass and on a desk (the temper chip reads NORMAL and the state agrees; the rest as before),
+  tools/tempers.js, headless wars resolve at 191 s and 239 s with peaks of 587 and 881 bodies.

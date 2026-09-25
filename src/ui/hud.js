@@ -4,6 +4,7 @@
 // line says the one thing to do next, from the state of the field. The FORTIFY plaque appears when a well
 // of yours is aimed at. The end card says who won and which shape broke which.
 import { ROLES, ROLE_GLYPH, BEATS } from '../sim/library.js';
+import { advise } from '../ai/coach.js';
 const FAM_GLYPH = ['●', '■', '▲', '⬢', '◯', '◆'];
 
 export function createHud(sim, state, deploy, fortify) {
@@ -23,31 +24,19 @@ export function createHud(sim, state, deploy, fortify) {
     bar.appendChild(c); cards.push(c);
   });
   fort.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fortify(); });
-  let dim = '', lastStrip = 0, lastCoach = '';
-  // THE COACH: one sentence, from the field, never a lesson
+  let dim = '', lastStrip = 0, lastCoach = '', lastPrice = -9999;
+  // THE COACH: one sentence, from the field, never a lesson - the same advice the coached player acts on (ai/coach.js); a wave alarm outranks it for five seconds
   function coach() {
-    const T = sim.T, WL = sim.WL, me = state.team, e = sim.energy[me];
-    let myWells = 0, open = 0, theirWells = 0, myForts = 0;
-    for (let w = 0; w < WL.n; w++) { if (WL.owner[w] === me) { myWells++; if (WL.fort[w]) myForts++; } else if (WL.owner[w] < 0) open++; else theirWells++; }
-    const cheapest = deck.reduce((a, b) => (b.cost < a.cost ? b : a), deck[0]);
-    const f = state.fielded ? state.fielded[1 - me] : null;
-    let top = -1, tv = 0; if (f) for (let q = 0; q < 6; q++) if (f[q] > tv) { tv = f[q]; top = q; }
-    let hot = -1, hv = 120; if (state.threat) for (let t = 0; t < T.n; t++) if (T.team[t] === me && T.alive[t] && state.threat[t] > hv) { hv = state.threat[t]; hot = t; }
     if (sim.result) return '';
-    if (hot >= 0 && top >= 0) { const ans = [0, 1, 2, 3, 4, 5].filter((q) => BEATS[q].includes(top)); return `THEY ARE AT YOUR STRONGHOLD WITH ${ROLE_GLYPH[top]} — MUSTER ${ans.map((q) => ROLE_GLYPH[q] + ' ' + ROLES[q]).join(' OR ')} THERE (TAP IT, THEN A CARD)`; }
-    if (state.deployed === 0) return `TAP A CARD — THE BATTALION GOES TO THE NEAREST WELL · EVERY WELL YOU HOLD PAYS +5/s`;
-    if (myWells === 0) return `YOUR FIRST BATTALION IS MARCHING TO A WELL — STAND ON IT AND IT TURNS ${me === 0 ? 'CYAN' : 'RED'} · TAP MORE CARDS FOR MORE WELLS`;
-    if (myWells < 4 && open > 0) return `${myWells} WELL${myWells > 1 ? 'S' : ''} · +${Math.round(sim.income[me])}/s — CLAIM MORE: TAP A CARD (IT GOES TO THE NEAREST OPEN WELL)`;
-    if (e >= sim.o.fortifyCost && myForts === 0 && myWells > 0) return `TAP A WELL OF YOURS, THEN FORTIFY — A WARDEN GUARDS IT AND IT PAYS +${sim.o.wellIncome + sim.o.fortifyBonus}/s`;
-    if (top >= 0 && tv > 0) { const ans = [0, 1, 2, 3, 4, 5].filter((q) => BEATS[q].includes(top)); return `THEY FIELD ${ROLE_GLYPH[top]} ${ROLES[top]} — ANSWER WITH ${ans.map((q) => ROLE_GLYPH[q] + ' ' + ROLES[q]).join(' OR ')} · TAP THEIR WELL OR STRONGHOLD TO AIM`; }
-    if (theirWells > myWells) return `THEY HOLD MORE WELLS (${theirWells} TO ${myWells}) — TAP ONE OF THEIRS, THEN A CARD, AND TAKE IT`;
-    return `${myWells} WELLS · +${Math.round(sim.income[me])}/s — TAP THEIR WEAKEST STRONGHOLD, THEN POUR (HOLD A CARD)`;
+    if (state.alarm && performance.now() < state.alarm.until) { const roles = state.alarm.roles.map((q) => ROLE_GLYPH[q]).join(' '); const top = state.alarm.top; const ans = top >= 0 ? [0, 1, 2, 3, 4, 5].filter((q) => BEATS[q].includes(top)).map((q) => ROLE_GLYPH[q] + ' ' + ROLES[q]).join(' OR ') : ''; return `A WAVE IS COMING ${roles} → ${state.alarm.where} — ${ans ? 'ANSWER WITH ' + ans + ' THERE' : 'HOLD IT'}`; }
+    const a = advise(sim, state.team, state.snap); return a ? a.text : '';
   }
   function sync(now) {
     const e = sim.energy[state.team], T = sim.T, WL = sim.WL;
     let key = '';
-    for (const b of deck) key += e >= b.cost ? '1' : '0';
+    for (const b of deck) key += e >= sim.price(b) ? '1' : '0';
     if (key !== dim) { dim = key; cards.forEach((c, i) => { c.classList.toggle('dim', key[i] === '0'); }); }
+    if (now - lastPrice > 1000) { lastPrice = now; const m = sim.mult(); cards.forEach((c, i) => { const b = deck[i]; c.querySelector('.p').textContent = sim.price(b); c.querySelector('.u').innerHTML = b.body.map(([kind, n]) => `<span>${FAM_GLYPH[sim.kinds[kind].shape]}<i>${Math.max(1, Math.round(n * m))}</i></span>`).join(''); }); }
     if (now - lastStrip > 200) {
       lastStrip = now;
       let mine = 0, theirs = 0, mhp = 0, thp = 0, wm = 0, wt = 0;
@@ -62,7 +51,7 @@ export function createHud(sim, state, deploy, fortify) {
         they = order.slice(0, 3).map((q) => `<b class="r${q}">${ROLE_GLYPH[q]}</b><i>${Math.round(f[q] / tot * 100)}%</i>`).join(' ');
         if (order.length) { const top = order[0]; answer = [0, 1, 2, 3, 4, 5].filter((q) => BEATS[q].includes(top)).map((q) => `<b class="r${q}">${ROLE_GLYPH[q]}</b> ${ROLES[q]}`).join(' · '); }
       }
-      strip.innerHTML = `<span class="a">ENERGY ${Math.floor(e)} <i>+${Math.round(sim.income[state.team])}/s</i></span><span>WELLS ${wm}<i>/${WL.n}</i> · STRONGHOLDS ${mine}<i> ${Math.round(mhp)}</i></span><span class="c">${m}:${s < 10 ? '0' : ''}${s}</span><span class="b">THEY ${theirs}<i> ${Math.round(thp)}</i> · WELLS ${wt} <i>+${Math.round(sim.income[1 - state.team])}/s</i></span><span class="k">THEY FIELD ${they || '—'}</span><span class="k">ANSWER ${answer || '—'}</span>`;
+      strip.innerHTML = `<span class="a">ENERGY ${Math.floor(e)} <i>+${Math.round(sim.income[state.team])}/s</i></span><span>WELLS ${wm}<i>/${WL.n}</i> · STRONGHOLDS ${mine}<i> ${Math.round(mhp)}</i></span><span class="c">${m}:${s < 10 ? '0' : ''}${s} <i>${(state.temper || 'normal').toUpperCase()}</i></span><span class="b">THEY ${theirs}<i> ${Math.round(thp)}</i> · WELLS ${wt} <i>+${Math.round(sim.income[1 - state.team])}/s</i></span><span class="k">THEY FIELD ${they || '—'}</span><span class="k">ANSWER ${answer || '—'}</span>`;
       const line = coach(); if (line !== lastCoach) { lastCoach = line; hint.textContent = line; hint.style.display = line ? 'block' : 'none'; }
       // the fortify plaque: a well of yours is aimed at and not yet fortified
       const g = state.goal; const w = g >= 1000 ? g - 1000 : -1;

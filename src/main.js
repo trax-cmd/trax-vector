@@ -4,7 +4,7 @@
 // with nothing aimed at goes to the nearest open well, then to the enemy's, then to their weakest
 // stronghold, and musters from your stronghold nearest that point. Everything is on window.VECTOR so a
 // probe, a tool or a relay drives the same match a person is watching.
-import { createSim, TICK } from './sim/sim.js';
+import { createSim, TICK, TEMPERS } from './sim/sim.js';
 import { createBot } from './ai/bot.js';
 import { createRenderer } from './render/gl.js';
 import { createVfx, colorOf, NEUTRAL } from './render/vfx.js';
@@ -15,11 +15,13 @@ import { createSound } from './ui/sound.js';
 
 const q = new URLSearchParams(location.search);
 const seed = +(q.get('seed') || ((Date.now() / 1000) | 0) % 100000);
-const sim = createSim({ seed });
-const state = { team: +(q.get('team') || 0), tower: -1, goal: -1, deployed: 0, flash: null, paused: false, fielded: null, threat: null, view: 'whole', lastGoalAt: 0 };
+let temper = q.get('temper') || ''; if (!TEMPERS[temper]) { try { temper = localStorage.getItem('vector_temper') || 'normal'; } catch (e) { temper = 'normal'; } } if (!TEMPERS[temper]) temper = 'normal';
+try { localStorage.setItem('vector_temper', temper); } catch (e) { /* fine */ }
+const sim = createSim({ seed, temper });
+const state = { team: +(q.get('team') || 0), tower: -1, goal: -1, deployed: 0, flash: null, paused: false, fielded: null, threat: null, snap: null, view: 'whole', lastGoalAt: 0, temper, alarm: null, musters: [] };
 const bots = [];
 if (q.get('a') === 'bot') bots.push(createBot(sim, 0, { seed }));
-if (q.get('b') !== 'human' && q.get('b') !== 'relay') bots.push(createBot(sim, 1, { seed: seed + 1 }));
+if (q.get('b') !== 'human' && q.get('b') !== 'relay') bots.push(createBot(sim, 1, { seed: seed + 1, every: TEMPERS[temper].every, burst: TEMPERS[temper].burst }));
 const relay = q.get('relay') ? createRelayClient(q.get('relay'), sim, q.get('b') === 'relay' ? 1 : 0) : null;
 const sound = createSound();
 
@@ -45,6 +47,8 @@ function defaultGoal() {
   let best = -1, bh = Infinity; for (let t = 0; t < T.n; t++) if (T.team[t] !== state.team && T.alive[t] && T.hp[t] < bh) { bh = T.hp[t]; best = t; }
   return best;
 }
+// where a wave is headed: the stronghold of mine nearest the musters' centre
+function nearestOwnGoal(musters) { let cx = 0, cy = 0; for (const m of musters) { cx += m.x; cy += m.y; } cx /= musters.length; cy /= musters.length; let best = -1, bd = Infinity; for (let t = 0; t < T.n; t++) { if (T.team[t] !== state.team || !T.alive[t]) continue; const dx = T.x[t] - cx, dy = T.y[t] - cy, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = t; } } return best; }
 function marchingTo(goal) { for (let i = 0; i < U.hi; i++) if (U.alive[i] && U.team[i] === state.team && U.goal[i] === goal) return true; return false; }
 function deploy(i) {
   let goal = state.goal;
@@ -67,6 +71,8 @@ const hud = createHud(sim, state, deploy, fortify);
 createInput(canvas, cam, sim, state, deploy, view, sound);
 document.getElementById('vwhole').addEventListener('click', view.whole);
 document.getElementById('vaction').addEventListener('click', view.action);
+const temperBtn = document.getElementById('vtemper'); temperBtn.textContent = temper.toUpperCase();
+temperBtn.addEventListener('click', () => { const names = Object.keys(TEMPERS); const next = names[(names.indexOf(temper) + 1) % names.length]; try { localStorage.setItem('vector_temper', next); } catch (e) { /* fine */ } const u = new URL(location.href); u.searchParams.set('temper', next); u.searchParams.set('seed', String(seed)); location.href = u.toString(); });
 const muteBtn = document.getElementById('vmute');
 muteBtn.textContent = sound.muted ? 'SOUND OFF' : 'SOUND ON';
 muteBtn.addEventListener('click', () => { sound.wake(); const m = sound.toggle(); muteBtn.textContent = m ? 'SOUND OFF' : 'SOUND ON'; });
@@ -129,6 +135,7 @@ function loop(now) {
       sim.step(); vfx.take(sim.events);
       for (const e of sim.events) {
         if (e.t === 'death' || e.t === 'towerHit' || e.t === 'capture') { const w = e.t === 'death' ? 1 : 6; heat.x += (e.x - heat.x) * 0.02 * w; heat.y += (e.y - heat.y) * 0.02 * w; heat.hot = Math.min(2, heat.hot + 0.08 * w); }
+        if (e.t === 'muster' && e.team !== state.team) { state.musters.push({ at: performance.now(), role: e.role, x: e.x, y: e.y }); state.musters = state.musters.filter((m) => performance.now() - m.at < 3000); if (state.musters.length >= 3 && !(state.alarm && performance.now() < state.alarm.until)) { const roles = state.musters.map((m) => m.role); const counts = [0, 0, 0, 0, 0, 0]; for (const r of roles) counts[r]++; let top = 0; for (let r = 1; r < 6; r++) if (counts[r] > counts[top]) top = r; const g = sim.goalPoint(nearestOwnGoal(state.musters)); state.alarm = { until: performance.now() + 6000, roles: [...new Set(roles)], top, where: g ? g.name : 'YOUR LINE' }; sound.play('alarm'); } }
         if (e.t === 'death') sound.play('death', e.team); else if (e.t === 'capture') sound.play(e.team === state.team ? 'capture' : (e.from === state.team ? 'lost' : 'capture'), e.team); else if (e.t === 'towerHit') { if (e.team === state.team) sound.play('towerHit', e.team); } else if (e.t === 'towerDown') sound.play('towerDown', e.team); else if (e.t === 'explode') sound.play('explode', e.team); else if (e.t === 'fortify') { if (e.team !== state.team) sound.play('fortify', e.team); } else if (e.t === 'end') sound.play(e.winner === state.team ? 'win' : 'lose');
       }
       heat.hot *= 0.985;
@@ -136,7 +143,7 @@ function loop(now) {
     }
     if (steps === 4) acc = 0;
   }
-  if (sim.tick >= snapAt) { snapAt = sim.tick + 30; const s = sim.snapshot(); state.fielded = s.fielded; state.threat = s.towers.map((t) => t.threat); }
+  if (sim.tick >= snapAt) { snapAt = sim.tick + 30; const s = sim.snapshot(); state.snap = s; state.fielded = s.fielded; state.threat = s.towers.map((t) => t.threat); }
   // THE HARVEST, seen: every well you hold sends a mote of light home twice a second
   if (now - flowAt > 500 && !sim.result) { flowAt = now; for (let w = 0; w < WL.n; w++) { const o = WL.owner[w]; if (o < 0) continue; let best = -1, bd = Infinity; for (let t = 0; t < T.n; t++) { if (T.team[t] !== o || !T.alive[t]) continue; const dx = T.x[t] - WL.x[w], dy = T.y[t] - WL.y[w], d = dx * dx + dy * dy; if (d < bd) { bd = d; best = t; } } if (best >= 0) vfx.flow(WL.x[w], WL.y[w], T.x[best], T.y[best], colorOf(o, 'base'), WL.fort[w] ? 2 : 1); } }
   if (state.view === 'whole') fitWhole(); else if (state.view === 'action') followAction();
