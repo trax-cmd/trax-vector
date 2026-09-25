@@ -15,6 +15,7 @@ export const DEFAULTS = {
   W: 9000, H: 5000,                 // the field, in world units
   towersPerSide: 5, towerHp: 2500, towerR: 90,
   wellR: 70, wellIncome: 5, captureRate: 0.35,   // a well pays its owner 5 a second; a lone side turns a neutral well in ~3 s, an enemy well in ~6
+  fortifyCost: 150, fortifyBonus: 3,               // THE FORT (v0.3): an owned well can be fortified - a warden ring stands on it and it pays 3 more a second; the fort falls with the well
   energy0: 800, incomePerTower: 6,  // a shared pool a side; each living stronghold pays into it every second
   clock: 600,                       // seconds; at the bell the side with more stronghold hp wins
   capUnits: 30000, capShots: 80000, capMines: 6000, cell: 96,
@@ -55,12 +56,12 @@ export function createSim(opts = {}) {
     }
   }
   // ---- the wells: thirteen a side, mirrored, all neutral at the bell
-  const WL = { x: [], y: [], owner: [], prog: [], n: 0 };
+  const WL = { x: [], y: [], owner: [], prog: [], fort: [], n: 0 };
   {
     const cols = [[0.2, [0.14, 0.4, 0.62, 0.86]], [0.29, [0.27, 0.5, 0.73]], [0.38, [0.14, 0.4, 0.62, 0.86]], [0.46, [0.35, 0.65]]];
     for (let side = 0; side < 2; side++) for (const [fx, fys] of cols) for (const fy of fys) {
       const x = o.W * fx, y = o.H * fy;
-      WL.x.push(side ? o.W - x : x); WL.y.push(y); WL.owner.push(-1); WL.prog.push(0); WL.n++;
+      WL.x.push(side ? o.W - x : x); WL.y.push(y); WL.owner.push(-1); WL.prog.push(0); WL.fort.push(0); WL.n++;
     }
   }
   const grid = new Grid(o.W, o.H, o.cell, N);
@@ -68,7 +69,7 @@ export function createSim(opts = {}) {
     o, rng, kinds, decks, U, P, MN, T, WL, grid,
     energy: [o.energy0, o.energy0], income: [0, 0],
     tick: 0, time: 0, events: [], queue: [], result: null, grpN: 1,
-    stats: { deployed: [0, 0], musters: [0, 0], kills: [0, 0], spent: [0, 0], towerDmg: [0, 0], roleKills: [zeros36(), zeros36()], wellsTaken: [0, 0] },
+    stats: { deployed: [0, 0], musters: [0, 0], kills: [0, 0], spent: [0, 0], towerDmg: [0, 0], roleKills: [zeros36(), zeros36()], wellsTaken: [0, 0], forts: [0, 0] },
   };
   function zeros36() { return new Uint32Array(36); }
   const EV_CAP = 2400;
@@ -156,6 +157,18 @@ export function createSim(opts = {}) {
   // { op:'deploy', team, tower, kind: id|index, goal }            one body (the tools and the wire)
   function apply(cmd) {
     if (S.result) return false;
+    if (cmd.op === 'fortify') {   // THE FORT: an owned well, not yet fortified, for the price - a warden musters on it and it pays more
+      const team = cmd.team | 0, w = cmd.well | 0;
+      if (w < 0 || w >= WL.n || WL.owner[w] !== team || WL.fort[w]) return false;
+      if (!cmd.free && S.energy[team] < o.fortifyCost) return false;
+      const wk = kinds.findIndex((k) => k.id === 'WARDEN'); if (wk < 0) return false;
+      let home = -1, hd = Infinity; for (let t = 0; t < T.n; t++) { if (!T.alive[t] || T.team[t] !== team) continue; const dx = T.x[t] - WL.x[w], dy = T.y[t] - WL.y[w], d = dx * dx + dy * dy; if (d < hd) { hd = d; home = t; } }
+      const i = spawnUnit(team, wk, WL.x[w], WL.y[w] - o.wellR * 0.6, 1000 + w, home, 0); if (i < 0) return false;
+      if (!cmd.free) { S.energy[team] -= o.fortifyCost; S.stats.spent[team] += o.fortifyCost; }
+      WL.fort[w] = 1; S.stats.forts[team]++;
+      ev({ t: 'fortify', x: WL.x[w], y: WL.y[w], team, well: w });
+      return true;
+    }
     if (cmd.op !== 'deploy') return false;
     const team = cmd.team | 0;
     const tw = cmd.tower | 0; if (tw < 0 || tw >= T.n || T.team[tw] !== team || !T.alive[tw]) return false;
@@ -426,8 +439,8 @@ export function createSim(opts = {}) {
       if (wa > 0 && wb === 0) p = Math.min(1, p + o.captureRate * dt); else if (wb > 0 && wa === 0) p = Math.max(-1, p - o.captureRate * dt);
       WL.prog[w] = p;
       const was = WL.owner[w];
-      if (p >= 1 && was !== 0) { WL.owner[w] = 0; S.stats.wellsTaken[0]++; ev({ t: 'capture', x: wcx, y: wcy, team: 0, well: w }); }
-      else if (p <= -1 && was !== 1) { WL.owner[w] = 1; S.stats.wellsTaken[1]++; ev({ t: 'capture', x: wcx, y: wcy, team: 1, well: w }); }
+      if (p >= 1 && was !== 0) { WL.owner[w] = 0; WL.fort[w] = 0; S.stats.wellsTaken[0]++; ev({ t: 'capture', x: wcx, y: wcy, team: 0, well: w, from: was }); }
+      else if (p <= -1 && was !== 1) { WL.owner[w] = 1; WL.fort[w] = 0; S.stats.wellsTaken[1]++; ev({ t: 'capture', x: wcx, y: wcy, team: 1, well: w, from: was }); }
     }
   }
 
@@ -440,7 +453,7 @@ export function createSim(opts = {}) {
     while (S.queue.length) apply(S.queue.shift());
     let inc0 = 0, inc1 = 0;
     for (let t = 0; t < T.n; t++) if (T.alive[t]) { if (T.team[t] === 0) inc0 += o.incomePerTower; else inc1 += o.incomePerTower; }
-    for (let w = 0; w < WL.n; w++) { if (WL.owner[w] === 0) inc0 += o.wellIncome; else if (WL.owner[w] === 1) inc1 += o.wellIncome; }
+    for (let w = 0; w < WL.n; w++) { const pay = o.wellIncome + (WL.fort[w] ? o.fortifyBonus : 0); if (WL.owner[w] === 0) inc0 += pay; else if (WL.owner[w] === 1) inc1 += pay; }
     S.income[0] = inc0; S.income[1] = inc1; S.energy[0] += inc0 * dt; S.energy[1] += inc1 * dt;
     grid.build(U.x, U.y, U.alive, U.hi);
     const hi = U.hi, tick = S.tick;
@@ -483,7 +496,7 @@ export function createSim(opts = {}) {
     return {
       tick: S.tick, time: +S.time.toFixed(2), energy: [Math.floor(S.energy[0]), Math.floor(S.energy[1])], income: S.income.slice(),
       towers: T.x.map((x, t) => ({ i: t, team: T.team[t], x, y: T.y[t], hp: Math.round(T.hp[t]), alive: !!T.alive[t], threat: Math.round(nearT[t]), guard: Math.round(nearTr[t]) })),
-      wells: WL.x.map((x, w) => ({ i: w, x, y: WL.y[w], owner: WL.owner[w], prog: +WL.prog[w].toFixed(2), west: Math.round(nearW[w]), east: Math.round(nearWr[w]) })),
+      wells: WL.x.map((x, w) => ({ i: w, x, y: WL.y[w], owner: WL.owner[w], fort: WL.fort[w], prog: +WL.prog[w].toFixed(2), west: Math.round(nearW[w]), east: Math.round(nearWr[w]) })),
       counts: [Array.from(counts[0]), Array.from(counts[1])], fielded, alive: [U.count[0], U.count[1]],
       decks: decks.map((d) => d.map((b) => ({ id: b.id, role: b.role, cost: b.cost }))),
       result: S.result,

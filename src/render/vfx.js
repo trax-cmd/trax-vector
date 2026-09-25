@@ -16,7 +16,7 @@ const ARC = [[0.75, 0.9, 1.0], [1.0, 0.85, 0.7]];
 export function createVfx(kinds) {
   const r = rng32(99);
   const CAP = 100000;
-  const P = { x: new Float32Array(CAP), y: new Float32Array(CAP), vx: new Float32Array(CAP), vy: new Float32Array(CAP), life: new Float32Array(CAP), max: new Float32Array(CAP), size: new Float32Array(CAP), r: new Float32Array(CAP), g: new Float32Array(CAP), b: new Float32Array(CAP), n: 0 };
+  const P = { x: new Float32Array(CAP), y: new Float32Array(CAP), vx: new Float32Array(CAP), vy: new Float32Array(CAP), life: new Float32Array(CAP), max: new Float32Array(CAP), size: new Float32Array(CAP), r: new Float32Array(CAP), g: new Float32Array(CAP), b: new Float32Array(CAP), keep: new Uint8Array(CAP), n: 0 };   // keep: a mote that does not slow (the harvest flows at one speed)
   const rings = [];   // { x, y, r0, r1, life, max, c, w }
   const segs = [];    // { x1, y1, x2, y2, w, c, a, life, max }
   const flashes = []; // { x, y, size, life, max, c }
@@ -28,12 +28,21 @@ export function createVfx(kinds) {
       const k = P.n++, a = r() * 6.283, v = speed * (0.3 + r() * 0.9);
       P.x[k] = x; P.y[k] = y; P.vx[k] = Math.cos(a) * v; P.vy[k] = Math.sin(a) * v;
       P.life[k] = P.max[k] = life * (0.6 + r() * 0.7); P.size[k] = size * (0.7 + r() * 0.6);
-      P.r[k] = c[0]; P.g[k] = c[1]; P.b[k] = c[2];
+      P.r[k] = c[0]; P.g[k] = c[1]; P.b[k] = c[2]; P.keep[k] = 0;
     }
   }
   const ring = (x, y, r0, r1, life, c, w) => { if (rings.length < 3000) rings.push({ x, y, r0, r1, life, max: life, c, w: w || 1 }); };
   const seg = (x1, y1, x2, y2, w, c, a, life) => { if (segs.length < 9000) segs.push({ x1, y1, x2, y2, w, c, a, life, max: life }); };
   const flash = (x, y, size, life, c) => { if (flashes.length < 2000) flashes.push({ x, y, size, life, max: life, c }); };
+  // THE HARVEST: a mote of light leaves a well for the stronghold that owns it - the energy, seen
+  function flow(x, y, tx, ty, c, n) {
+    for (let i = 0; i < n; i++) {
+      if (P.n >= CAP) return;
+      const k = P.n++, dx = tx - x, dy = ty - y, d = Math.hypot(dx, dy) || 1, v = 380;
+      P.x[k] = x + (r() - 0.5) * 30; P.y[k] = y + (r() - 0.5) * 30; P.vx[k] = dx / d * v; P.vy[k] = dy / d * v;
+      P.life[k] = P.max[k] = Math.min(2.6, d / v); P.size[k] = 4.5; P.r[k] = c[0]; P.g[k] = c[1]; P.b[k] = c[2]; P.keep[k] = 1;
+    }
+  }
 
   function take(events) {
     for (const e of events) {
@@ -56,6 +65,7 @@ export function createVfx(kinds) {
         case 'deploy': ring(e.x, e.y, 6, 40, 0.3, c); spark(e.x, e.y, c, 80, 0.4, 2, 5); break;
         case 'muster': { const b = TEAM[e.team].base; ring(e.x, e.y, 10, 90 + e.n * 6, 0.5, b, 1.4); spark(e.x, e.y, b, 120, 0.5, 2.2, 8 + e.n); break; }
         case 'capture': { const b = TEAM[e.team].base; ring(e.x, e.y, 20, 160, 0.7, b, 2); ring(e.x, e.y, 10, 90, 0.4, TEAM[e.team].flash, 2); spark(e.x, e.y, b, 160, 0.6, 2.4, 24); break; }
+        case 'fortify': { const b = TEAM[e.team].base; ring(e.x, e.y, 30, 130, 0.9, b, 2.4); ring(e.x, e.y, 30, 130, 0.9, TEAM[e.team].flash, 1.2); spark(e.x, e.y, b, 90, 0.9, 2.6, 30); break; }
         case 'shot': break;
         case 'mine': ring(e.x, e.y, 4, 16, 0.3, c); break;
         case 'spawnout': spark(e.x, e.y, c, 100, 0.3, 2, 4); break;
@@ -69,8 +79,8 @@ export function createVfx(kinds) {
     let n = P.n;
     for (let k = 0; k < n; k++) {
       P.life[k] -= dt;
-      if (P.life[k] <= 0) { n--; if (k !== n) { P.x[k] = P.x[n]; P.y[k] = P.y[n]; P.vx[k] = P.vx[n]; P.vy[k] = P.vy[n]; P.life[k] = P.life[n]; P.max[k] = P.max[n]; P.size[k] = P.size[n]; P.r[k] = P.r[n]; P.g[k] = P.g[n]; P.b[k] = P.b[n]; } k--; continue; }
-      P.x[k] += P.vx[k] * dt; P.y[k] += P.vy[k] * dt; const dmp = 1 - Math.min(0.9, dt * 2.4); P.vx[k] *= dmp; P.vy[k] *= dmp;
+      if (P.life[k] <= 0) { n--; if (k !== n) { P.x[k] = P.x[n]; P.y[k] = P.y[n]; P.vx[k] = P.vx[n]; P.vy[k] = P.vy[n]; P.life[k] = P.life[n]; P.max[k] = P.max[n]; P.size[k] = P.size[n]; P.r[k] = P.r[n]; P.g[k] = P.g[n]; P.b[k] = P.b[n]; P.keep[k] = P.keep[n]; } k--; continue; }
+      P.x[k] += P.vx[k] * dt; P.y[k] += P.vy[k] * dt; if (!P.keep[k]) { const dmp = 1 - Math.min(0.9, dt * 2.4); P.vx[k] *= dmp; P.vy[k] *= dmp; }
     }
     P.n = n;
     for (let i = rings.length - 1; i >= 0; i--) { rings[i].life -= dt; if (rings[i].life <= 0) { rings[i] = rings[rings.length - 1]; rings.pop(); } }
@@ -79,10 +89,10 @@ export function createVfx(kinds) {
   }
   // write everything into the renderer's streams
   function fill(out) {
-    for (let k = 0; k < P.n; k++) { const t = P.life[k] / P.max[k]; out.spark(P.x[k], P.y[k], P.size[k] * (0.4 + t), 0, P.r[k], P.g[k], P.b[k], t * 0.9, 0, 1); }
+    for (let k = 0; k < P.n; k++) { const t = P.life[k] / P.max[k]; if (P.keep[k]) out.spark(P.x[k], P.y[k], P.size[k], 0, P.r[k], P.g[k], P.b[k], 0.35 + 0.5 * Math.sin(t * 3.14), 0, 1); else out.spark(P.x[k], P.y[k], P.size[k] * (0.4 + t), 0, P.r[k], P.g[k], P.b[k], t * 0.9, 0, 1); }
     for (const g of rings) { const t = 1 - g.life / g.max; const rr = g.r0 + (g.r1 - g.r0) * (1 - (1 - t) * (1 - t)); out.spark(g.x, g.y, rr, 4, g.c[0], g.c[1], g.c[2], (1 - t) * 0.7 * g.w, 0, 0.4); }
     for (const f of flashes) { const t = f.life / f.max; out.spark(f.x, f.y, f.size * (1.2 - t * 0.4), 0, f.c[0], f.c[1], f.c[2], t * 0.8, 0, 1); }
     for (const s of segs) { const t = s.life / s.max; out.line(s.x1, s.y1, s.x2, s.y2, s.w, s.c[0], s.c[1], s.c[2], s.a * t); }
   }
-  return { take, update, fill, get counts() { return { particles: P.n, rings: rings.length, segs: segs.length }; } };
+  return { take, update, fill, flow, get counts() { return { particles: P.n, rings: rings.length, segs: segs.length }; } };
 }

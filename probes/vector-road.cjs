@@ -22,9 +22,15 @@ async function waitServer() { for (let i = 0; i < 40; i++) { try { await new Pro
   await sleep(1500);
   const boot = await p.evaluate(() => { const V = window.VECTOR; if (!V) return null; return { seed: V.seed, towers: V.sim.T.n, tower: V.state.team, chosen: V.state.tower, alive: [V.sim.U.count[0], V.sim.U.count[1]], energy: V.sim.energy.slice(), fps: V.fps, counts: V.counts, gl: !!document.querySelector('#field').getContext('webgl2') }; });
   console.log(GLASS, 'BOOT', JSON.stringify(boot));
+  const coach0 = await p.evaluate(() => document.getElementById('hint').textContent); console.log('the coach at the bell:', JSON.stringify(coach0)); if (!/WELL/.test(coach0)) fails.push('the coach line at the bell does not point at the wells');
   if (!boot) { fails.push('window.VECTOR missing (module failed?)'); }
   else { if (boot.towers !== 10) fails.push('towers ' + boot.towers); if (!boot.gl) fails.push('no webgl2 context'); }
   const tap = async (x, y) => { if (GLASS === 'phone') await p.touchscreen.tap(x, y); else await p.mouse.click(x, y); };
+  // 0. a card with nothing aimed at: the battalion goes to the nearest open well, from the nearest stronghold
+  const first = await p.evaluate(() => { const c = document.querySelector('.card'); const r = c.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await tap(first.x, first.y); await sleep(400);
+  const blind = await p.evaluate(() => { const V = window.VECTOR, U = V.sim.U; let g = -1, n = 0; for (let i = 0; i < U.hi; i++) if (U.alive[i] && U.team[i] === 0) { g = U.goal[i]; n++; } return { goal: g, n, from: V.state.tower, coach: document.getElementById('hint').textContent }; });
+  console.log('a blind card ->', JSON.stringify(blind)); if (blind.goal < 1000) fails.push('a blind card did not send the battalion to a well (goal ' + blind.goal + ')'); if (!/MARCHING|WELL/.test(blind.coach)) fails.push('the coach did not follow the first muster');
   // 1. a tower of mine by a tap (the northern one), then an enemy tower to aim
   const toScreen = async (t) => p.evaluate((t) => { const V = window.VECTOR, c = document.getElementById('field'); return [c.clientWidth / 2 + (V.sim.T.x[t] - V.cam.x) * V.cam.zoom, c.clientHeight / 2 + (V.sim.T.y[t] - V.cam.y) * V.cam.zoom]; }, t);
   const [tx0, ty0] = await toScreen(0); await tap(tx0, ty0); await sleep(200);
@@ -43,7 +49,7 @@ async function waitServer() { for (let i = 0; i < 40; i++) { try { await new Pro
   await tap(card.x, card.y); await sleep(300);
   const after = await p.evaluate(() => ({ energy: window.VECTOR.sim.energy[0], alive: window.VECTOR.sim.U.count[0], deployed: window.VECTOR.state.deployed }));
   console.log('BLOCK card', JSON.stringify({ before: Math.floor(e0), after }));
-  if (after.deployed !== 1 || after.alive < 2 || after.energy >= e0) fails.push('the card did not muster a battalion and charge: ' + JSON.stringify(after));
+  if (after.deployed !== 2 || after.alive < 10 || after.energy >= e0) fails.push('the card did not muster a second battalion and charge: ' + JSON.stringify(after));
   const strip = await p.evaluate(() => document.getElementById('strip').textContent); if (!/WELLS/.test(strip) || !/ANSWER/.test(strip)) fails.push('the strip does not read wells and the answer: ' + strip.slice(0, 120));
   // 3. a second battalion sent across the field at the enemy's first well, so the two sides meet; the captain across the field claims its own wells meanwhile
   await p.evaluate(() => { window.VECTOR.state.goal = 1013; window.VECTOR.deploy(1); });
@@ -55,6 +61,20 @@ async function waitServer() { for (let i = 0; i < 40; i++) { try { await new Pro
   if (fight.kills[0] + fight.kills[1] < 1) fails.push('no body fell in seventy seconds');
   const wells = await p.evaluate(() => { const W = window.VECTOR.sim.WL; let a = 0, b = 0, moving = 0; for (let w = 0; w < W.n; w++) { if (W.owner[w] === 0) a++; else if (W.owner[w] === 1) b++; if (W.prog[w] !== 0) moving++; } return { west: a, east: b, moving }; }); console.log('wells', JSON.stringify(wells)); if (wells.east + wells.moving < 1) fails.push('the east captain claimed no well and turned none in ten seconds');
   await p.screenshot({ path: 'C:/Users/TraxN/Desktop/trax-vector/probes/shots/road-' + GLASS + '-1-field.png' });
+  // 4. THE FORT: aim at a well of mine, the plaque appears, a tap on it fortifies (a warden stands, the energy drops)
+  const mineW = await p.evaluate(() => { const W = window.VECTOR.sim.WL; for (let w = 0; w < W.n; w++) if (W.owner[w] === 0) return w; return -1; });
+  console.log('a well of mine:', mineW);
+  if (mineW < 0) fails.push('no well of mine after the fight');
+  else {
+    await p.evaluate((w) => { window.VECTOR.state.goal = 1000 + w; }, mineW); await sleep(400);
+    const plaque = await p.evaluate(() => { const f = document.getElementById('fortify'); const r = f.getBoundingClientRect(); return { shown: getComputedStyle(f).display !== 'none', x: r.x + r.width / 2, y: r.y + r.height / 2, text: f.textContent }; });
+    console.log('the fortify plaque', JSON.stringify(plaque)); if (!plaque.shown) fails.push('the fortify plaque did not appear for a well of mine');
+    const e1 = await p.evaluate(() => window.VECTOR.sim.energy[0]);
+    await tap(plaque.x, plaque.y); await sleep(500);
+    const fortd = await p.evaluate((w) => { const V = window.VECTOR; let wardens = 0; for (let i = 0; i < V.sim.U.hi; i++) if (V.sim.U.alive[i] && V.sim.kinds[V.sim.U.kind[i]].id === 'WARDEN' && V.sim.U.team[i] === 0) wardens++; return { fort: V.sim.WL.fort[w], energy: V.sim.energy[0], wardens, forts: V.sim.S.stats.forts.slice(), sound: V.sound.on }; }, mineW);
+    console.log('after the plaque', JSON.stringify(fortd)); if (!fortd.fort || fortd.wardens < 1 || fortd.energy >= e1) fails.push('the plaque did not fortify the well: ' + JSON.stringify(fortd));
+    await p.screenshot({ path: 'C:/Users/TraxN/Desktop/trax-vector/probes/shots/road-' + GLASS + '-3-fort.png' });
+  }
   // 4. zoom in on the fight and look
   await p.evaluate(() => { const V = window.VECTOR, U = V.sim.U; let sx = 0, sy = 0, n = 0; for (let i = 0; i < U.hi; i++) if (U.alive[i]) { sx += U.x[i]; sy += U.y[i]; n++; } V.cam.zoom = 0.9; if (n) { V.cam.x = sx / n; V.cam.y = sy / n; } });   // look where the bodies are
   await sleep(1500);

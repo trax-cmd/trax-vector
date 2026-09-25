@@ -27,8 +27,10 @@
   #views button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--pane); color: var(--dim); font: 700 10px ui-monospace, Menlo, monospace; letter-spacing: .12em; cursor: pointer; }
   #views button.on { color: var(--gold); border-color: var(--gold); }
   #endline { max-width: 90vw; line-height: 1.7; }
-  @media (max-width: 1000px) { #strip { font-size: 10px; gap: 10px; row-gap: 1px; flex-wrap: wrap; padding: 6px 10px; } #hint { top: 58px; font-size: 10px; } #views { top: 46px; } #stamp { top: 46px; } }
-  #hint { position: fixed; left: 50%; top: 44px; transform: translateX(-50%); padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--pane); color: var(--ink); font-size: 11px; letter-spacing: .06em; pointer-events: none; white-space: nowrap; }
+  @media (max-width: 1000px) { #strip { font-size: 10px; gap: 10px; row-gap: 1px; flex-wrap: wrap; padding: 6px 10px; } #hint { top: 58px; font-size: 10px; } #views { top: 46px; } #stamp { top: 46px; } #fortify { bottom: 128px; font-size: 11px; } }
+  #hint { position: fixed; left: 50%; top: 44px; transform: translateX(-50%); padding: 6px 12px; border: 1px solid var(--gold); border-radius: 8px; background: var(--pane); color: var(--gold); font-size: 11px; font-weight: 700; letter-spacing: .06em; pointer-events: none; white-space: nowrap; max-width: 96vw; overflow: hidden; text-overflow: ellipsis; }
+  #fortify { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); display: none; padding: 10px 18px; border: 2px solid var(--gold); border-radius: 10px; background: rgba(8,10,20,0.9); color: var(--gold); font: 800 12px ui-monospace, Menlo, monospace; letter-spacing: .14em; cursor: pointer; touch-action: none; z-index: 6; }
+  #fortify.dim { opacity: .45; }
   #end, #nogl { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(5,6,13,0.78); z-index: 20; text-align: center; }
   #endword { font-size: 34px; font-weight: 900; letter-spacing: .25em; color: var(--gold); }
   #endline { color: var(--ink); letter-spacing: .08em; }
@@ -39,9 +41,10 @@
 <body>
 <canvas id="field"></canvas>
 <div id="strip"></div>
-<div id="stamp">v0.2.0 · VECTOR · THE FIELD OF WELLS</div>
-<div id="views"><button id="vwhole" class="on">WHOLE</button><button id="vaction">ACTION</button></div>
-<div id="hint">TAP A STRONGHOLD OF YOURS · TAP A WELL OR AN ENEMY STRONGHOLD TO AIM · TAP A CARD TO MUSTER A BATTALION · HOLD TO POUR</div>
+<div id="stamp">v0.3.0 · VECTOR · THE HARVEST</div>
+<div id="views"><button id="vwhole" class="on">WHOLE</button><button id="vaction">ACTION</button><button id="vmute">SOUND ON</button></div>
+<div id="hint">TAP A CARD — THE BATTALION GOES TO THE NEAREST WELL · EVERY WELL YOU HOLD PAYS +5/s</div>
+<div id="fortify">FORTIFY THIS WELL · 150</div>
 <div id="bar"></div>
 <div id="end"><div id="endword"></div><div id="endline"></div><button id="again">PLAY AGAIN</button></div>
 <div id="nogl"><div id="endword">NO WEBGL2</div><div>this field needs a browser with WebGL2</div></div>

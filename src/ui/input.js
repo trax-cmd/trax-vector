@@ -2,7 +2,7 @@
 // where the next battalion musters, tap an enemy stronghold or any well to aim at it, tap a card (or
 // press its digit) to muster. A held card pours. The same pointer events serve a mouse and a finger;
 // nothing here reads the sim but the positions of what can be tapped.
-export function createInput(canvas, cam, sim, state, deploy, view) {
+export function createInput(canvas, cam, sim, state, deploy, view, sound) {
   const ptrs = new Map();
   let pinchD = 0, downAt = null, moved = false;
   const T = sim.T, WL = sim.WL, R = sim.o.towerR;
@@ -16,9 +16,10 @@ export function createInput(canvas, cam, sim, state, deploy, view) {
     for (let t = 0; t < T.n; t++) { if (!T.alive[t]) continue; const dx = T.x[t] - wx, dy = T.y[t] - wy, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = t; kind = 'tower'; } }
     for (let w = 0; w < WL.n; w++) { const dx = WL.x[w] - wx, dy = WL.y[w] - wy, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = w; kind = 'well'; } }
     if (best < 0) return;
-    if (kind === 'tower') { if (T.team[best] === state.team) state.tower = best; else state.goal = best; }
+    if (kind === 'tower') { if (T.team[best] === state.team) { state.tower = best; state.towerPinned = true; } else state.goal = best; }
     else state.goal = 1000 + best;
     state.flash = { kind, i: best, at: performance.now() };
+    if (sound) sound.play('tap');
   }
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture(e.pointerId);

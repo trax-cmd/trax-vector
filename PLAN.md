@@ -19,9 +19,21 @@ Working title VECTOR. The name is his call (open, below).
   stronghold is where battalions muster and what the enemy comes to kill.
 - **THE WELLS.** Twenty-six across the field, neutral at the bell. A side alone on a well turns it in
   three seconds (six to take an enemy's); a well pays its owner 5 a second. The war is for the wells.
-- **THE MUSTER.** Tap a stronghold of yours, tap a well or an enemy stronghold to aim, tap a card. A
-  BATTALION musters in formation beside your stronghold and marches on the point, fighting what it meets,
-  and holds there. Hold a card to pour. Digits 1–8 from the keyboard.
+- **THE MUSTER.** Tap a card. With nothing aimed at, the battalion goes to the nearest open well, then
+  to the nearest enemy well, then to their weakest stronghold, and musters from your stronghold nearest
+  that point (v0.3: the game teaches by doing - the first tap is already a good move). Tap a well or an
+  enemy stronghold to aim; tap a stronghold of yours to muster from it. Hold a card to pour. Digits 1–8.
+- **THE HARVEST, SEEN (v0.3).** Every well you hold sends a mote of light home twice a second; the strip
+  reads your energy and its rate, and the enemy's. Before your first muster the open wells breathe.
+- **THE COACH (v0.3).** One gold line under the strip says the one thing to do next, from the state of
+  the field: claim, answer what they field, take their wells, fortify, pour on their weakest stronghold.
+  Never a lesson, never a pop-up.
+- **THE FORT (v0.3).** Aim at a well of yours and a plaque offers FORTIFY for 150: a WARDEN ring stands
+  on it (shielded, regenerating, pulsing) and the well pays 8 a second instead of 5. Lose the well and
+  the fort is lost. Collecting is one choice, managing is another: expand, fortify, or attack.
+- **THE VOICE (v0.3).** No samples: a few oscillators per event, cold for the west and hot for the
+  east - a muster, a well turning, a well lost, a fort, a death, a stronghold struck, a stronghold
+  down, the win, the loss. A SOUND chip mutes it.
 - **THE ENERGY.** One pool a side. Every living stronghold pays 6 a second, every well 5; you open with
   800. A battalion costs its price.
 - **THE SHAPES ARE THE ROLES.** ● ORBS are THE SWARM; ■ SQUARES THE ARMOR; ▲ TRIANGLES THE STRIKE;
@@ -214,8 +226,8 @@ Three levels, honest about what a model can do:
 - **v0.3 THE WIRE ABROAD.** The worker relay with room codes; me versus him from anywhere; a spectator
   link.
 - **v0.4 THE VERBS.** Rally and retreat; the abilities list above; the vocabulary's new words.
-- **v0.5 THE PHONE.** The glass at every size, the pinch and the pour, sound (a synthesized voice per
-  family, no samples), the end card's replay.
+- **v0.5 THE PHONE.** The glass at every size, the pinch and the pour, a voice per family (the first
+  synthesized voice landed in v0.3), the end card's replay.
 
 ## 9. WHAT STANDS UNTIL HE SAYS OTHERWISE
 
@@ -260,3 +272,17 @@ the headless numbers printed, no page error. Nothing is claimed that the probe d
   on a well; a card musters eight bodies and charges; the card reads "beats ▲ ⬢"; the strip reads WELLS
   and ANSWER; the east captain claims wells within ten seconds; a battalion sent across the field meets
   the enemy and a body falls), the judge's table above, frames viewed.
+
+- **2026-09-24 · THE HARVEST (v0.3.0).** His word: "more interesting and more epic, but I don't know how
+  to collect energy. And I don't know what to do ... the dynamic of collecting and managing is starting
+  to come into play ... make it a game, make it fun." My decisions: a blind card is a good move (the
+  nearest open well, from the nearest stronghold), the harvest is seen (motes of light from every well
+  you hold to your stronghold), the coach line reads the field and says the one next thing, the open
+  wells breathe before the first muster, the last order is drawn as a thread, the fight glows on the
+  whole view, FORTIFY gives managing a choice (150: a warden and +3 a second, lost with the well; the
+  captain fortifies too, once it holds three wells), and the voice - synthesized, nine events, a mute
+  chip. Measured: two captains fortify thirteen and fourteen wells in five minutes; wars still resolve
+  (seeds 2 and 7 by strongholds at 264 s and 276 s). Proof: vector-road.cjs at the phone glass and on a
+  desk (the coach at the bell points at the wells; a blind card sends eight bodies to well 1 from
+  stronghold 2 and the coach follows; the plaque appears for a well of mine and a tap fortifies it - a
+  warden stands, the energy drops; sound wakes on the first tap; the rest as before), frames viewed.

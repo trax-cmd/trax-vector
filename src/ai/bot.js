@@ -12,7 +12,7 @@ export function createBot(sim, team, opts = {}) {
   const reserve = opts.reserve ?? 0.1;
   const waves = opts.waves ?? 3;           // battalions in a wave
   const burst = opts.burst || 4;           // musters a look, at most
-  let nextLook = 0, claims = [];           // wells claimed lately: [well, tick]
+  let nextLook = 0, claims = [], lastFort = -9999;   // wells claimed lately: [well, tick]; the tick of the last fort
   const deck = sim.decks[team];
   const other = 1 - team;
 
@@ -25,6 +25,7 @@ export function createBot(sim, team, opts = {}) {
     return pool[r.int(pool.length)];
   }
   const cheapest = () => deck.reduce((a, b) => (b.cost < a.cost ? b : a), deck[0]);
+  const avgCost = () => deck.reduce((a, b) => a + b.cost, 0) / deck.length;
   const topRole = (fielded) => { let best = -1, bv = 0; for (let q = 0; q < 6; q++) if (fielded[q] > bv) { bv = fielded[q]; best = q; } return best; };
   const nearest = (list, to) => { let b = null, bd = Infinity; for (const t of list) { const dx = t.x - to.x, dy = t.y - to.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; b = t; } } return b; };
 
@@ -57,8 +58,13 @@ export function createBot(sim, team, opts = {}) {
         if (b.cost <= energy - keep) { send(b, from, 1000 + w.i); claims.push([w.i, sim.tick]); }
       }
     }
+    // 2b. THE FORT: holding three wells and a quiet one among them, with some energy in hand, fortify the quiet one nearest my strongholds - at most one every ten seconds
+    if (sent < burst && energy - keep > 400 && myWells.length >= 3 && sim.tick - lastFort > 300) {
+      const quiet = myWells.filter((w) => !w.fort && (team === 0 ? w.east : w.west) < 50);
+      if (quiet.length) { const w = nearest(quiet, nearest(mine, quiet[0])); cmds.push({ op: 'fortify', team, well: w.i }); energy -= 150; sent++; lastFort = sim.tick; }
+    }
     // 3. THE WAVE: with a wave's worth in hand, hit the weakest stronghold from the nearest of mine with the answers to their field
-    const avg = deck.reduce((a, b) => a + b.cost, 0) / deck.length;
+    const avg = avgCost();
     if (sent < burst && energy - keep > avg * waves) {
       const weak = theirs.slice().sort((a, b) => a.hp - b.hp)[0];
       const from = nearest(mine, weak);

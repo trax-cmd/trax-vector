@@ -33,6 +33,8 @@ export const LIBRARY = [
   // DIAMONDS - the blades: THE BLADE
   { id: 'NEEDLE', family: 'diamond', hp: 34, speed: 330, move: 'phase', weapon: 'beam', w: { dmg: 42, rate: 1.3, range: 270 }, traits: ['cloak'], tags: ['assassin'] },
   { id: 'PRISM',  family: 'diamond', r: 14, hp: 74, speed: 210, move: 'orbit', weapon: 'beam', w: { dmg: 17, rate: 2, range: 350, pierce: 3 }, tags: ['strike', 'line'] },
+  // THE WARDEN - on no card: the ring that stands on a fortified well (sim.js fortify). It holds, it pulses, it does not march.
+  { id: 'WARDEN', family: 'ring', r: 20, hp: 260, speed: 60, move: 'hold', weapon: 'pulse', w: { dmg: 16, rate: 0.8, range: 170 }, traits: ['shield', 'regen'], shield: 120, cost: 100, tags: ['guard'] },
 ];
 
 // THE ROLES: one per shape. This is the whole strategy a player needs to read the field: shape against
