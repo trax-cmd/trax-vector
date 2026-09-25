@@ -1,71 +1,105 @@
-// input.js — THE HAND. Drag the field, pinch or wheel to zoom, tap a stronghold of yours to choose
-// where the next battalion musters, tap an enemy stronghold or any well to aim at it, tap a card (or
-// press its digit) to muster. A held card pours. The same pointer events serve a mouse and a finger;
-// nothing here reads the sim but the positions of what can be tapped.
-export function createInput(canvas, cam, sim, state, deploy, view, sound) {
-  const ptrs = new Map();
-  let pinchD = 0, downAt = null, moved = false;
-  const T = sim.T, WL = sim.WL, R = sim.o.towerR;
-  const toWorld = (px, py) => [cam.x + (px - canvas.clientWidth / 2) / cam.zoom, cam.y + (py - canvas.clientHeight / 2) / cam.zoom];
-  const clampZoom = (z) => Math.max(0.04, Math.min(3, z));
+// input.js — THE FIELD'S HAND (SPEC §4.7). The canvas only: one finger pans and the camera goes free,
+// pinch and wheel zoom about the finger clamped [0.30, 1.20], a double-tap re-follows, arrows pan, digits
+// 1–8 are the tap on a card, Q/W/E held with a digit send to lane 0/1/2, Escape cancels a drag, the sound
+// wakes on the first touch. The cards, the band, the plate and the minimap take their own pointers in their
+// own modules; a drag's pointer is captured by its card and never reaches here. Nothing here reads the sim
+// and nothing here aims: a tap on the field alone does nothing (§4.4).
+const ZMIN = 0.30, ZMAX = 1.20;
+const TAP_MS = 300, TAP_PX = 20;      // a double-tap: two taps < 300 ms apart, < 20 px
+const MOVE_PX = 8;                    // a pan begins after 8 px, so a tap stays a tap
+const ARROW_PX = 120;                 // one arrow press pans this many screen px
+const LANE_KEY = { q: 0, w: 1, e: 2 };
 
-  function tap(px, py) {
-    const [wx, wy] = toWorld(px, py);
-    const reach = Math.max(R * 2.2, 36 / cam.zoom);   // a finger is a finger at any zoom
-    let best = -1, bd = reach * reach, kind = '';
-    for (let t = 0; t < T.n; t++) { if (!T.alive[t]) continue; const dx = T.x[t] - wx, dy = T.y[t] - wy, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = t; kind = 'tower'; } }
-    for (let w = 0; w < WL.n; w++) { const dx = WL.x[w] - wx, dy = WL.y[w] - wy, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = w; kind = 'well'; } }
-    if (best < 0) return;
-    if (kind === 'tower') { if (T.team[best] === state.team) { state.tower = best; state.towerPinned = true; } else state.goal = best; }
-    else state.goal = 1000 + best;
-    state.flash = { kind, i: best, at: performance.now() };
-    if (sound) sound.play('tap');
+export function createInput(canvas, view, state, cb) {
+  const ptrs = new Map();
+  let pinchD = 0, drift = 0, down = null, moved = false, lastTap = null;
+  const heldLanes = [];                 // the lane keys held right now, last pressed last
+
+  // A screen delta as a world delta. This mirrors gl.js's rotation rule (§2.2) for DELTAS only: the converter
+  // proper (R.toWorld) is not in this module's hands, and a pan or a zoom about the finger needs no offset,
+  // only the scale and the turn - rot 0 → (dx, dy)/k; rot ±1 → (rot·dy, −rot·dx)/k.
+  function worldDelta(dx, dy) { const k = view.zoom, r = view.rot || 0; return r ? [r * dy / k, -r * dx / k] : [dx / k, dy / k]; }
+  const clampZoom = (z) => Math.max(ZMIN, Math.min(ZMAX, z));
+  const busy = () => !!state.drag;      // the camera never moves under a live drag (edge pan is drag.js's)
+  const followedLane = () => (state.follow && state.follow.lane >= 0 ? state.follow.lane : 1);
+
+  // pan so the world under the finger moves with it
+  function pan(dx, dy) { const [wx, wy] = worldDelta(dx, dy); view.x -= wx; view.y -= wy; }
+  // zoom by f about the screen point (px, py): the world under that point stays put
+  function zoomAt(px, py, f) {
+    const r = view.rect, ox = px - (r.x + r.w / 2), oy = py - (r.y + r.h / 2);
+    const [ax, ay] = worldDelta(ox, oy);
+    view.zoom = clampZoom(view.zoom * f);
+    const [bx, by] = worldDelta(ox, oy);
+    view.x += ax - bx; view.y += ay - by;
   }
+
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture(e.pointerId);
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (ptrs.size === 1) { downAt = { x: e.clientX, y: e.clientY, t: performance.now() }; moved = false; }
-    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinchD = Math.hypot(a.x - b.x, a.y - b.y); }
+    if (ptrs.size === 1) { down = { x: e.clientX, y: e.clientY, t: performance.now() }; moved = false; }
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinchD = Math.hypot(a.x - b.x, a.y - b.y); drift = 0; }
     e.preventDefault();
   });
   canvas.addEventListener('pointermove', (e) => {
     const p = ptrs.get(e.pointerId); if (!p) return;
     const dx = e.clientX - p.x, dy = e.clientY - p.y;
-    if (ptrs.size === 1) {
-      if (Math.abs(e.clientX - downAt.x) + Math.abs(e.clientY - downAt.y) > 8) moved = true;
-      if (moved) { cam.x -= dx / cam.zoom; cam.y -= dy / cam.zoom; view.free(); }
-    } else if (ptrs.size === 2) {
-      p.x = e.clientX; p.y = e.clientY;
-      const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
-      if (pinchD > 0) { zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, d / pinchD); }
-      pinchD = d; moved = true; return;
-    }
     p.x = e.clientX; p.y = e.clientY;
+    if (ptrs.size === 2) {
+      // a pinch zooms about the fingers' midpoint and carries the world with the midpoint; only a real drift frees the camera
+      moved = true;
+      if (busy() || pinchD <= 0) return;
+      const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+      zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, d / pinchD);
+      pinchD = d;
+      pan(dx / 2, dy / 2); drift += Math.hypot(dx, dy) / 2;
+      if (drift > MOVE_PX) cb.free();
+      return;
+    }
+    if (ptrs.size !== 1) return;
+    if (!moved && Math.abs(e.clientX - down.x) + Math.abs(e.clientY - down.y) > MOVE_PX) moved = true;
+    if (moved && !busy()) { pan(dx, dy); cb.free(); }
   });
-  const up = (e) => {
-    const had = ptrs.has(e.pointerId); ptrs.delete(e.pointerId);
-    if (had && ptrs.size === 0 && downAt && !moved && performance.now() - downAt.t < 400) tap(e.clientX, e.clientY);
+  function up(e) {
+    const had = ptrs.delete(e.pointerId);
+    if (had && ptrs.size === 0 && down && !moved && performance.now() - down.t < TAP_MS) tapped(e.clientX, e.clientY);
     if (ptrs.size < 2) pinchD = 0;
-    if (ptrs.size === 0) downAt = null;
-  };
-  canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
-  canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0012)); }, { passive: false });
-  function zoomAt(px, py, f) {
-    const [wx, wy] = toWorld(px, py);
-    cam.zoom = clampZoom(cam.zoom * f);
-    const [nx, ny] = toWorld(px, py);
-    cam.x += wx - nx; cam.y += wy - ny; view.free();
+    if (ptrs.size === 0) down = null;
   }
+  canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());   // a long press on Android would open a menu on the field
+  // one tap on the field is nothing; the second within 300 ms and 20 px re-follows the followed lane
+  function tapped(x, y) {
+    const now = performance.now();
+    if (lastTap && now - lastTap.t < TAP_MS && Math.hypot(x - lastTap.x, y - lastTap.y) < TAP_PX) { lastTap = null; cb.follow(followedLane()); return; }
+    lastTap = { x, y, t: now };
+  }
+  canvas.addEventListener('wheel', (e) => { e.preventDefault(); if (!busy()) zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0012)); }, { passive: false });
+
+  // ---- the desk's keys
+  const typing = (e) => e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable);
   window.addEventListener('keydown', (e) => {
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
-    if (e.key >= '1' && e.key <= '9') { deploy(+e.key - 1); return; }
-    const step = 120 / cam.zoom;
-    if (e.key === 'ArrowLeft') { cam.x -= step; view.free(); } else if (e.key === 'ArrowRight') { cam.x += step; view.free(); } else if (e.key === 'ArrowUp') { cam.y -= step; view.free(); } else if (e.key === 'ArrowDown') { cam.y += step; view.free(); }
-    else if (e.key === '+' || e.key === '=') { cam.zoom = clampZoom(cam.zoom * 1.2); view.free(); } else if (e.key === '-') { cam.zoom = clampZoom(cam.zoom / 1.2); view.free(); }
-    else if (e.key === 'f' || e.key === 'F') view.whole();
-    else if (e.key === 'a' || e.key === 'A') view.action();
-    else if (e.key === 'q' || e.key === 'Q') { state.tower = nextOwn(-1); } else if (e.key === 'e' || e.key === 'E') { state.tower = nextOwn(1); }
+    if (typing(e)) return;
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (key in LANE_KEY) { if (!heldLanes.includes(LANE_KEY[key])) heldLanes.push(LANE_KEY[key]); return; }
+    if (key >= '1' && key <= '8') { const i = +key - 1; if (heldLanes.length) cb.digitLane(i, heldLanes[heldLanes.length - 1]); else cb.tap(i); return; }
+    if (key === 'Escape') { cb.cancelDrag(); return; }
+    if (busy()) return;
+    const r = view.rect, cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    if (key === 'ArrowLeft') { pan(ARROW_PX, 0); cb.free(); } else if (key === 'ArrowRight') { pan(-ARROW_PX, 0); cb.free(); }
+    else if (key === 'ArrowUp') { pan(0, ARROW_PX); cb.free(); } else if (key === 'ArrowDown') { pan(0, -ARROW_PX); cb.free(); }
+    // + / − zoom about the rect's centre, the same clamp as the wheel: §4.7 names neither key, so a desk without a wheel keeps a way in and out (my call)
+    else if (key === '+' || key === '=') zoomAt(cx, cy, 1.2); else if (key === '-') zoomAt(cx, cy, 1 / 1.2);
   });
-  function nextOwn(dir) { const own = []; for (let t = 0; t < T.n; t++) if (T.team[t] === state.team && T.alive[t]) own.push(t); if (!own.length) return -1; const i = own.indexOf(state.tower); return own[((i < 0 ? 0 : i) + dir + own.length) % own.length]; }
-  return { toWorld, zoomAt };
+  window.addEventListener('keyup', (e) => { const key = e.key.length === 1 ? e.key.toLowerCase() : e.key; if (key in LANE_KEY) { const i = heldLanes.indexOf(LANE_KEY[key]); if (i >= 0) heldLanes.splice(i, 1); } });
+  window.addEventListener('blur', () => { heldLanes.length = 0; });
+
+  // ---- the strip's lane arrows: a tap follows that lane. Bound here because follow(lane) is this module's hand
+  // and nothing on the strip has one; a card dropped on an arrow is drag.js's affair and never becomes a click.
+  for (const el of document.querySelectorAll('#lanes .lane')) el.addEventListener('click', () => cb.follow(+el.dataset.lane));
+
+  // ---- the sound wakes on the first pointer anywhere (browsers demand a gesture); cb.wake is main.js's sound.wake
+  if (cb.wake) window.addEventListener('pointerdown', () => cb.wake(), { passive: true, capture: true });
+
+  return { zoomAt, pan };
 }

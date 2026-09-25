@@ -1,9 +1,11 @@
-// library.js — THE FIRST ROSTER, THE ROLES, THE BATTALIONS AND THE DRAFT.
+// library.js — THE FIRST ROSTER, THE ROLES, THE BATTALIONS, THE DRAFT AND THE WORDS.
 // The bodies are written by hand so the grammar has voices before the generator has a thousand. Above
 // them sit the six ROLES - one per shape, so the strategic language is the visual one: a triangle IS a
 // striker - and the BATTALIONS, formations of bodies that are what a commander actually deploys.
-// The counter table is a promise the duel tool (tools/duel.js) checks; the numbers below were tuned
-// until the promise held.
+// The counter table and the role prices are what the duel tool (tools/duel.js) measured, baked as it
+// printed them, so a card never promises what the field denies. The words at the end (a role's job, a
+// battalion's line, the waves' names, the supers) are what the cards, the banner and the plates print,
+// so every glass says the same thing.
 import { rng32 } from './rng.js';
 import { FAMILIES, MOVES, WEAPONS, TRAITS } from './units.js';
 
@@ -33,20 +35,28 @@ export const LIBRARY = [
   // DIAMONDS - the blades: THE BLADE
   { id: 'NEEDLE', family: 'diamond', hp: 34, speed: 330, move: 'phase', weapon: 'beam', w: { dmg: 42, rate: 1.3, range: 270 }, traits: ['cloak'], tags: ['assassin'] },
   { id: 'PRISM',  family: 'diamond', r: 14, hp: 74, speed: 210, move: 'orbit', weapon: 'beam', w: { dmg: 17, rate: 2, range: 350, pierce: 3 }, tags: ['strike', 'line'] },
-  // THE WARDEN - on no card: the ring that stands on a fortified well (sim.js fortify). It holds, it pulses, it does not march.
-  { id: 'WARDEN', family: 'ring', r: 20, hp: 260, speed: 60, move: 'hold', weapon: 'pulse', w: { dmg: 16, rate: 0.8, range: 170 }, traits: ['shield', 'regen'], shield: 120, cost: 100, tags: ['guard'] },
 ];
 
 // THE ROLES: one per shape. This is the whole strategy a player needs to read the field: shape against
 // shape. THE TABLE IS MEASURED, NOT PROMISED: tools/duel.js fights every battalion against every other at
-// the role prices below and writes BEATS from what it saw (a shape beats another it wins against by more
-// than a tenth). At the heart a three-way cycle - squares beat orbs, orbs beat hexagons, hexagons beat
-// squares - with the triangle hunting hexagons, the diamond hunting rings and squares, the ring checking
-// orbs. The judge's reading of 2026-09-24 (two duels a pair, 1,200 energy a side, both seats):
-//   ● beats ▲ +0.20 ⬢ +0.16 · ■ beats ● +0.29 ▲ +0.14 · ▲ beats ⬢ +0.15 · ⬢ beats ■ +0.33 ◯ +0.17 · ◯ beats ● +0.11 · ◆ beats ◯ +0.34 ■ +0.17 ⬢ +0.13
+// the role prices below and writes BEATS from what it saw - a shape beats another it wins against by more
+// than 0.15, both seats folded. The judge's reading of 2026-09-25 on the lane field (the two lines alone in
+// the centre lane, 900 apart at THE CENTRE, the strongholds out of the fight; two duels a pair, 1,200 energy
+// a side, --passes 3), which a second run on the same bytes repeated to the digit:
+//   ● beats ◆ +0.23 ◯ +0.18 · ■ beats ● +0.49 ◆ +0.26 ▲ +0.22 · ▲ beats ◆ +0.26 ⬢ +0.16 · ◯ beats ■ +0.16 · ◆ beats ◯ +0.33
+//   ⬢ beats no shape by the margin (its best ◆ +0.10, ◯ +0.09): the long guns' trade is the strongholds, which take
+//   their shots whole (sim.js THE WALL) and which the judge keeps out of the fight.
+// At the heart a three-way cycle - squares beat orbs, orbs beat rings, rings beat squares - with the triangle
+// hunting hexagons, and the diamond, which hunts rings, answered by the orb, the square and the triangle.
 export const ROLES = ['SWARM', 'ARMOR', 'STRIKE', 'SIEGE', 'FIELD', 'BLADE'];   // in FAMILIES order: orb, square, tri, hex, ring, diamond
 export const ROLE_GLYPH = ['●', '■', '▲', '⬢', '◯', '◆'];
-export const BEATS = [[2, 3], [0, 2], [3], [1, 4], [0], [4, 1, 3]];   // role r beats BEATS[r], strongest first - the judge's reading, see above
+export const ROLE_JOB = ['cheap, many', 'slow wall', 'fast divers', 'long guns', 'stun & heal', 'cloak hunters'];   // a role's job in ≤ 13 characters: the card's third row
+/* THE GATE BREAKER: the role whose shots land WHOLE on a gate (sim.js THE WALL: every other shot does a tenth, a surging lane on its own gate excepted) -
+   the SIEGE shape beats no shape by the judge, it beats strongholds; the card, the hold banner and the coach say so through this one constant */
+export const GATE_BREAKER = 3;
+export const SUPER_NAMES = ['OVERDRIVE', 'BULWARK', 'BLINK', 'BARRAGE', 'NOVA', 'EXECUTE'];   // what a surge does to each shape (sim.js fireSurge); the plate prints the lane's top role's
+export const BEATS = [[5, 4], [0, 5, 2], [5, 3], [], [1], [4]];   // role r beats BEATS[r], strongest first - the judge's reading, see above
+// LOSES is derived, never written: the roles that beat r, so the green row of one card and the red row of another cannot disagree
 export const LOSES = ROLES.map((_, r) => ROLES.map((_, q) => q).filter((q) => BEATS[q].includes(r)));
 export const roleOf = (family) => FAMILIES.indexOf(family);
 
@@ -71,10 +81,32 @@ export const BATTALIONS = [
   { id: 'NEEDLE PACK',    role: 5, form: 'cloud',  units: [['NEEDLE', 6]] },
   { id: 'PRISM LINE',     role: 5, form: 'line',   units: [['PRISM', 4], ['NEEDLE', 2]] },
 ];
+// A battalion's own line, ≤ 26 characters, under the banner while its card is held.
+export const BATT_LINE = {
+  'MOTE CLOUD': 'eighteen motes, a cloud', 'SPARK WING': 'eight twin-shot orbs', 'BLOOM LINE': 'blooms split into motes',
+  'PHALANX': 'four blocks and a healer', 'BASTION WALL': 'shielded pulse wall', 'SLAB TRAIN': 'mine-laying slabs',
+  'LANCE': 'six beam darts', 'TALON STORM': 'chain-lightning divers', 'SHARD RAIN': 'fourteen suicide shards',
+  'SIEGE TRAIN': 'three mortars, one cannon', 'CANNON LINE': 'piercing cannons, a hive', 'HIVE MOTHER': 'hives that bear motes',
+  'NULL FIELD': 'stun pulses and healers', 'LODESTONE RING': 'magnets that drag swarms', 'COIL BATTERY': 'lightning batteries',
+  'NEEDLE PACK': 'cloaked assassins', 'PRISM LINE': 'piercing beams, cloaked',
+};
+// THE WAVES BY NAME: the captain's waves are announced three seconds ahead; the name is the wave's top role's, four per role, cycled by the wave number.
+export const WAVE_NAMES = [
+  ['THE LOCUST HOUR', 'THE GLASS RAIN', 'THE MOTE STORM', 'THE THOUSAND'],    // ● SWARM
+  ['THE IRON TIDE', 'THE WALL WALKS', 'THE SLAB CHOIR', 'THE ANVIL'],         // ■ ARMOR
+  ['THE SPEARHEAD', 'THE KNIFE HOUR', 'THE LANCE', 'THE DIVE'],               // ▲ STRIKE
+  ['THE THUNDER LINE', 'THE LONG GUNS', 'THE HIVE MOTHER', 'THE BOMBARD'],    // ⬢ SIEGE
+  ['THE NULL CHOIR', 'THE HALO', 'THE STILL FIELD', 'THE LODESTONE'],         // ◯ FIELD
+  ['THE KNIVES', 'THE PRISM', 'THE NEEDLES', 'THE CUT'],                      // ◆ BLADE
+];
 
-// THE ROLE PRICE: what a role pays on top of its bodies' formula price, set by the judge (tools/duel.js --passes) until
-// every role is worth its cost at equal budgets. The formula prices a body; the judge prices a role.
-export const ROLE_PRICE = [0.63, 1.27, 0.81, 1.86, 0.86, 0.84];   // the judge's reading of 2026-09-24: every role within a tenth of fair at these
+// THE ROLE PRICE: what a role pays on top of its bodies' formula price, walked by the judge (tools/duel.js --passes) toward
+// every role worth its cost at equal budgets. The formula prices a body; the judge prices a role. The reading of 2026-09-25
+// on the lane field: three passes from 09-24's ● 0.63 ■ 1.27 ▲ 0.81 ⬢ 1.86 ◯ 0.86 ◆ 0.84, then THE ANSWER TO BLADE (§7) -
+// nothing beat the diamond at 0.90 or 1.00, so its price rose a tenth a pass to 1.10, where ▲ +0.26 ■ +0.26 ● +0.23 beat it.
+// At these prices the roles win on average ● +0.03 ■ +0.17 ▲ +0.02 ⬢ -0.03 ◯ -0.08 ◆ -0.10: three passes and the blade's
+// rise leave the square the strongest buy, and the next walk starts here.
+export const ROLE_PRICE = [0.6, 1.41, 0.8, 1.92, 0.73, 1.1];
 // A battalion's price is its bodies' prices, times its role's price, with a tenth off for the muster.
 export function battalionCost(b, kinds, rolePrice) {
   let c = 0;

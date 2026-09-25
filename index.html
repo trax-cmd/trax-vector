@@ -4,58 +4,189 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>TRAX: VECTOR</title>
-<meta name="description" content="A top-down war of shapes and light. Five strongholds a side, twenty-six wells to claim, battalions in formation, a shape that beats a shape.">
+<meta name="description" content="THE BREACH. Three lanes between two sides' gates; drag a card onto a lane and a battalion marches; the fronts move checkpoint by checkpoint; a gate at zero shatters.">
 <style>
-  :root { --ink: #dfe8ff; --dim: #6f7fa6; --gold: #ffd76a; --west: #5cf2ff; --east: #ff6a52; --pane: rgba(8, 10, 20, 0.72); --line: #2a3352; }
-  html, body { margin: 0; height: 100%; background: #05060d; color: var(--ink); font: 13px ui-monospace, Menlo, Consolas, monospace; overflow: hidden; -webkit-user-select: none; user-select: none; }
-  #field { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  #strip { position: fixed; top: 0; left: 0; right: 0; display: flex; gap: 18px; justify-content: center; padding: 8px 12px; background: linear-gradient(rgba(5,6,13,0.9), rgba(5,6,13,0)); letter-spacing: .08em; font-weight: 700; font-size: 12px; pointer-events: none; white-space: nowrap; }
-  #strip .a { color: var(--west); } #strip .b { color: var(--east); } #strip .c { color: var(--gold); } #strip .k { color: var(--dim); }
-  #bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 6px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); overflow-x: auto; background: linear-gradient(rgba(5,6,13,0), rgba(5,6,13,0.92) 40%); scrollbar-width: none; }
-  #bar::-webkit-scrollbar { display: none; }
-  .card { flex: 0 0 auto; min-width: 84px; padding: 6px 6px 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--pane); text-align: center; cursor: pointer; touch-action: none; transition: opacity .15s, transform .08s; }
-  .card:active { transform: scale(0.96); border-color: var(--gold); }
-  .card.dim { opacity: 0.35; }
-  .card .g { font-size: 18px; line-height: 20px; } .card .g.t0 { color: var(--west); } .card .g.t1 { color: var(--east); }
-  .card .n { font-size: 9px; letter-spacing: .1em; color: var(--ink); margin-top: 2px; }
-  .card .p { font-size: 15px; font-weight: 800; color: var(--gold); }
-  .card .d { font-size: 9px; color: var(--dim); }
-  .card .u { font-size: 10px; color: var(--dim); letter-spacing: .04em; margin-top: 1px; } .card .u i { font-style: normal; font-size: 9px; margin-right: 3px; }
-  .card .w { font-size: 9px; color: var(--ink); letter-spacing: .06em; opacity: .85; }
-  #strip i { font-style: normal; color: var(--dim); font-weight: 600; } #strip b { font-weight: 800; } #strip .r0, #strip .r1, #strip .r2, #strip .r3, #strip .r4, #strip .r5 { color: var(--gold); }
-  #views { position: fixed; left: 8px; top: 30px; display: flex; gap: 6px; z-index: 5; }
-  #views button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--pane); color: var(--dim); font: 700 10px ui-monospace, Menlo, monospace; letter-spacing: .12em; cursor: pointer; }
-  #views button.on { color: var(--gold); border-color: var(--gold); }
-  #endline { max-width: 90vw; line-height: 1.7; }
-  @media (max-width: 1000px) { #strip { font-size: 10px; gap: 10px; row-gap: 1px; flex-wrap: wrap; padding: 6px 10px; } #hint { top: 92px; font-size: 10px; max-width: 94vw; padding: 5px 10px; } #views { top: 46px; gap: 4px; } #views button { padding: 4px 8px; font-size: 9px; letter-spacing: .08em; } #stamp { top: 46px; } #fortify { bottom: 128px; font-size: 11px; } }
-  #hint { position: fixed; left: 50%; top: 44px; transform: translateX(-50%); padding: 6px 12px; border: 1px solid var(--gold); border-radius: 8px; background: var(--pane); color: var(--gold); font-size: 11px; font-weight: 700; letter-spacing: .06em; pointer-events: none; white-space: normal; text-align: center; max-width: min(92vw, 900px); line-height: 1.5; }
-  #fortify { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); display: none; padding: 10px 18px; border: 2px solid var(--gold); border-radius: 10px; background: rgba(8,10,20,0.9); color: var(--gold); font: 800 12px ui-monospace, Menlo, monospace; letter-spacing: .14em; cursor: pointer; touch-action: none; z-index: 6; }
-  #fortify.dim { opacity: .45; }
-  #hint b { display: block; font-size: 13px; letter-spacing: .14em; } #hint span { display: block; color: var(--dim); font-weight: 600; font-size: 10px; letter-spacing: .04em; margin-top: 2px; }
-  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
-  .lbl { position: absolute; left: 0; top: 0; white-space: nowrap; font: 800 11px ui-monospace, Menlo, monospace; letter-spacing: .12em; padding: 3px 7px; border-radius: 6px; background: rgba(6,8,14,0.7); color: var(--ink); will-change: transform, opacity; }
-  .lbl.t0 { color: var(--west); } .lbl.t1 { color: var(--east); }
-  .lbl.mark { color: var(--gold); border: 1px solid var(--gold); display: none; }
-  .card.go { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold), 0 0 18px rgba(255,215,106,0.45); animation: glow 1.2s ease-in-out infinite; }
-  @keyframes glow { 0%, 100% { box-shadow: 0 0 0 1px var(--gold), 0 0 10px rgba(255,215,106,0.3); } 50% { box-shadow: 0 0 0 2px var(--gold), 0 0 26px rgba(255,215,106,0.7); } }
-  #end, #nogl { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(5,6,13,0.78); z-index: 20; text-align: center; }
-  #endword { font-size: 34px; font-weight: 900; letter-spacing: .25em; color: var(--gold); }
-  #endline { color: var(--ink); letter-spacing: .08em; }
-  #again { padding: 12px 28px; border: 2px solid var(--gold); border-radius: 10px; background: transparent; color: var(--gold); font: 800 14px ui-monospace, Menlo, monospace; letter-spacing: .2em; cursor: pointer; }
-  #stamp { position: fixed; right: 8px; top: 30px; color: var(--dim); font-size: 10px; letter-spacing: .08em; pointer-events: none; }
+  /* THE GLASS (SPEC §1, §4.1). Three glasses by media rule: portrait (orientation: portrait), landscape
+     (max-width: 999px) and (orientation: landscape), desk otherwise - the same rule main.js judges into
+     body[data-glass]. The chrome heights live in variables so the plate (18 % of the clear field rect),
+     the banner (36 px above the hand) and the minimap (8 px above the hand / under the band) are computed
+     from ONE set of numbers; the hand's own grid produces the same height, so the two never disagree. */
+  :root {
+    --west: #12A7C8; --west-edge: #7FF3FF; --east: #C8321E; --east-edge: #FFB07A;
+    --gold: #FFD76A; --beats: #5CFF7A; --loses: #FF4D4D; --ink: #DFE8FF; --dim: #8A94AD;
+    --pane: rgba(6, 8, 14, 0.7); --chrome: rgba(6, 8, 14, 0.92); --line: #2A3352; --band: #0E1322;
+    --sat: env(safe-area-inset-top, 0px); --sal: env(safe-area-inset-left, 0px); --sar: env(safe-area-inset-right, 0px);
+    --strip: 36px; --surge: 36px; --hand: calc(112px + env(safe-area-inset-bottom, 0px));
+    --top: calc(var(--strip) + var(--surge) + var(--sat));                  /* the clear field rect's y */
+    --mono: ui-monospace, Menlo, Consolas, "Roboto Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;   /* the card's job line only (§4.2 row 3): see .card .role */
+  }
+  @media (orientation: portrait) { :root { --hand: calc(202px + env(safe-area-inset-bottom, 0px)); } }
+  @media (max-width: 999px) and (orientation: landscape) { :root { --strip: 28px; --surge: 24px; --hand: calc(76px + env(safe-area-inset-bottom, 0px)); } }
+
+  html, body { margin: 0; height: 100%; background: #05060D; color: var(--ink); font: 12px var(--mono); overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; touch-action: none; -webkit-user-select: none; user-select: none; }
+
+  /* ---- the layers, bottom to top ---- */
+  #field { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; z-index: 0; }
+
+  /* the strip sits ABOVE the surge band: on landscape the strip is 28 tall and the arrows 36, so the whole 44 × 36 hit
+     (§4.8) must be the arrow's, not the band's under it; the strip's own box never reaches the band on any glass */
+  #strip { position: fixed; top: 0; left: 0; right: 0; z-index: 4; height: var(--strip); padding: var(--sat) 0 0 0; background: var(--chrome); font-weight: 800; font-size: 12px; letter-spacing: .08em; white-space: nowrap; }
+  #energy { position: absolute; left: calc(8px + var(--sal)); top: var(--sat); height: var(--strip); line-height: var(--strip); color: var(--gold); }
+  #clock { position: absolute; left: 50%; top: var(--sat); transform: translateX(-50%); height: var(--strip); line-height: var(--strip); color: var(--ink); }
+  #lanes { position: absolute; right: calc(44px + var(--sar)); top: var(--sat); display: flex; }
+  /* the arrows' rules are scoped to the strip: `.lane` is also the field's lane word (`.lbl.lane`, §9.8), which must hug its text */
+  #lanes .lane { position: relative; width: 44px; height: 36px; color: var(--dim); font-weight: 800; font-size: 12px; letter-spacing: .08em; line-height: 36px; text-align: center; }
+  #lanes .lane .k { color: var(--dim); } #lanes .lane .ar { margin-left: 3px; }
+  #lanes .lane.t0 .ar { color: var(--west-edge); } #lanes .lane.t1 .ar { color: var(--east-edge); }
+  #lanes .lane.followed .k { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 2px; }
+  #lanes .lane.coach::after { content: ''; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
+
+  #more { position: fixed; top: var(--sat); right: var(--sar); z-index: 12; width: 44px; height: 44px; line-height: 44px; text-align: center; font-size: 22px; font-weight: 800; color: var(--ink); }
+  #sheet { position: fixed; top: calc(44px + var(--sat)); right: calc(8px + var(--sar)); z-index: 12; display: none; flex-direction: column; min-width: 236px; background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  #sheet.open { display: flex; }
+  #sheet > * { display: block; box-sizing: border-box; height: 44px; line-height: 44px; padding: 0 14px; text-align: left; font-size: 12px; font-weight: 700; letter-spacing: .1em; color: var(--ink); border-bottom: 1px solid var(--line); white-space: nowrap; }
+  #sheet > :last-child { border-bottom: 0; }
+  #stamp { color: var(--dim); font-weight: 600; letter-spacing: .06em; }
+
+  /* THE SURGE BAND (§4.6): a bar filling in the team fill with a 1 px edge, the number at the right;
+     at 100 gold, pulsing at 1.5 Hz, SURGE READY · DRAG TO A LANE. The bar's width transitions 400 ms so
+     a fired surge drains over 400 ms (the drain budget of §4.8). */
+  #surge { position: fixed; left: 0; right: 0; top: calc(var(--strip) + var(--sat)); z-index: 3; height: var(--surge); background: var(--chrome); border-bottom: 1px solid var(--line); box-sizing: border-box; touch-action: none; overflow: hidden; }
+  #surge .bar { position: absolute; left: var(--sal); top: 3px; bottom: 3px; width: 0; background: var(--west); box-shadow: inset 0 0 0 1px var(--west-edge); transition: width .4s ease-out; }   /* the edge is an inset shadow: nothing is drawn at 0 */
+  #surge.t1 .bar { background: var(--east); box-shadow: inset 0 0 0 1px var(--east-edge); }
+  #surge .txt { position: absolute; right: calc(52px + var(--sar)); top: 0; height: 100%; line-height: var(--surge); font-size: 12px; font-weight: 800; letter-spacing: .08em; color: var(--ink); white-space: nowrap; }
+  #surge.ready .bar { background: var(--gold); box-shadow: inset 0 0 0 1px #FFF1B8; animation: surgeready .667s ease-in-out infinite; }   /* one run = one pulse: 1.5 Hz */
+  #surge.ready .txt { color: #05060D; font-size: 14px; }
+  #surge.shake { animation: shake .2s linear; }
+  @keyframes surgeready { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+
+  /* THE PLATE (§5.4): one sentence, 44 tall, its CENTRE at 18 % of the clear field rect - the top is that
+     centre and the transform lifts half the plate's own height, so a plate that wraps on portrait is centred
+     as well as a one-line one; 150 ms in from 8 px above, 200 ms out; announce.js sets the HTML and toggles
+     .on with .t0/.t1. */
+  #plate { position: fixed; left: 0; right: 0; margin: 0 auto; width: fit-content; top: calc(var(--top) + 0.18 * (100vh - var(--top) - var(--hand))); top: calc(var(--top) + 0.18 * (100dvh - var(--top) - var(--hand))); z-index: 4; box-sizing: border-box; height: 44px; line-height: 44px; padding: 0 16px; max-width: 94vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--pane); border-radius: 6px; font-size: 18px; font-weight: 800; letter-spacing: .2em; color: var(--ink); opacity: 0; pointer-events: none; transform: translateY(calc(-50% - 8px)); transition: opacity .2s ease-in, transform .2s ease-in; }
+  #plate.on { opacity: 1; pointer-events: auto; transform: translateY(-50%); transition: opacity .15s ease-out, transform .15s ease-out; }
+  #plate.t0 { color: var(--west-edge); } #plate.t1 { color: var(--east-edge); }
+  #plate .gold { color: var(--gold); }   /* the wave plate's answer glyph (announce.js marks it <b class="gold">) */
+
+  /* THE BANNER (§4.5): the hold preview words, 36 px above the hand; the counts at the right, the
+     battalion's line (or the coach's reason) under. On portrait it keeps clear of the standing minimap. */
+  #banner { position: fixed; left: 0; right: 0; margin: 0 auto; width: fit-content; bottom: calc(var(--hand) + 36px); z-index: 5; display: none; grid-template-columns: 1fr auto; column-gap: 12px; box-sizing: border-box; max-width: min(740px, 92vw); padding: 6px 12px; background: var(--pane); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; line-height: 16px; letter-spacing: .06em; }
+  #banner.on { display: grid; }
+  #banner .txt { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #banner .right { color: var(--gold); font-weight: 800; white-space: nowrap; }
+  #banner .sub { grid-column: 1 / -1; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #banner .sub:empty { display: none; }
+
+  /* THE MINIMAP HIT DIV (§2.10): transparent over the canvas's second viewport, the CSS border is the
+     map's frame; the rects are §1's numbers, minimap.js may re-lay them inline on a resize. */
+  #minimap { position: fixed; z-index: 6; box-sizing: border-box; border: 1px solid var(--line); touch-action: none; }
+
+  #labels { position: fixed; inset: 0; z-index: 7; pointer-events: none; overflow: hidden; }
+  .lbl { position: absolute; left: 0; top: 0; white-space: nowrap; font-weight: 800; font-size: 16px; letter-spacing: .1em; color: var(--ink); will-change: transform, opacity; }
+  .lbl.t0 { color: var(--west-edge); } .lbl.t1 { color: var(--east-edge); }
+  .lbl.chip { font-size: 12px; padding: 3px 7px; border-radius: 6px; background: var(--pane); }
+  .lbl.word, .lbl.lane, .lbl.gold { font-size: 12px; color: var(--gold); }
+  .lbl.lane { padding: 3px 7px; border-radius: 6px; background: var(--pane); }
+  .lbl.chip.cancel { color: var(--loses); }
+
+  /* THE HAND (§4.2): a fixed grid, nothing scrolls, the cards' rects are §1's numbers. */
+  #hand { position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; display: grid; justify-content: center; align-content: start; box-sizing: border-box; grid-template-columns: repeat(8, minmax(0, 120px)); grid-auto-rows: 100px; gap: 8px; padding: 6px calc(8px + var(--sar)) calc(6px + env(safe-area-inset-bottom, 0px)) calc(8px + var(--sal)); background: var(--chrome); overflow: visible; touch-action: none; }
+  @media (orientation: portrait) { #hand { grid-template-columns: repeat(4, minmax(0, 89px)); grid-auto-rows: 92px; gap: 6px; padding: 0 8px calc(12px + env(safe-area-inset-bottom, 0px)); } }
+  @media (max-width: 999px) and (orientation: landscape) { #hand { grid-template-columns: repeat(8, minmax(0, 98px)); grid-auto-rows: 64px; gap: 4px; padding: 6px calc(8px + var(--sar)) calc(6px + env(safe-area-inset-bottom, 0px)) calc(8px + var(--sal)); } }
+
+  .card { position: relative; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; padding: 4px 6px 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--pane); color: var(--ink); cursor: pointer; touch-action: none; transition: transform 80ms ease-out, opacity 150ms; will-change: transform; }
+  .card .top { display: flex; align-items: center; justify-content: space-between; height: 26px; }
+  .card .ico { display: block; width: 22px; height: 22px; }
+  .card .price { position: relative; display: flex; align-items: center; gap: 4px; height: 26px; }
+  .card .arc { display: none; width: 14px; height: 14px; border-radius: 50%; background: conic-gradient(var(--gold) calc(var(--p, 0) * 1turn), rgba(255, 215, 106, 0.18) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); }
+  .card .p { font-size: 15px; line-height: 15px; font-weight: 800; color: var(--gold); }
+  .card .wait { position: absolute; right: 0; top: 19px; display: none; font-size: 10px; line-height: 10px; color: var(--loses); white-space: nowrap; }
+  .card .name { font-size: 10px; line-height: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* the ROLE line (§4.2 row 3): glyph + job, 10 px, one line. The words are the spec's (≤ 13 chars) and 10 px is the
+     floor, but in the house mono they do not fit the portrait card: 'cloak hunters' is 71.5 px in Consolas (the probe's
+     frame) and 78 in SF Mono (an iPhone), and with the ◆ glyph (8.4 px) and its 4 px margin the row needs 84 px of the
+     card's 79 (portrait, padding 4). So the job is set in the system sans, where the longest pair measures 71.4 px
+     (Segoe UI) / 71.9 (Arial) - the same face on every glass, one design at two sizes; the ellipsis is the graceful
+     end for a fallback face wider than any measured (Verdana would need 80). */
+  .card .role { font-size: 10px; line-height: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .role i { font-style: normal; color: var(--ink); margin-right: 4px; }
+  .card .role span { font-family: var(--sans); }
+  .card .vs { display: flex; align-items: center; font-size: 12px; line-height: 14px; white-space: nowrap; overflow: hidden; }
+  .card .vs i { font-style: normal; margin-right: 2px; }
+  .card .vs .beats { color: var(--beats); } .card .vs .loses { color: var(--loses); }
+  .card .vs .bar { flex: none; width: 1px; height: 12px; margin: 0 4px 0 2px; background: var(--line); }
+  .card .tag { display: none; position: absolute; top: -6px; right: 6px; height: 12px; line-height: 12px; padding: 0 4px; border-radius: 3px 3px 0 0; background: var(--gold); color: #05060D; font-size: 10px; font-weight: 800; letter-spacing: .1em; }
+  @media (max-width: 999px) and (orientation: landscape) { .card .role { display: none; } }
+  .card.dim { opacity: 0.45; }
+  .card.dim .p { color: rgba(255, 77, 77, 0.85); }
+  .card.dim .arc, .card.dim .wait { display: block; }
+  .card.go { border: 2px solid var(--gold); padding: 3px 5px 4px; animation: gopulse 1.2s ease-in-out infinite; }
+  .card.go .tag { display: block; }
+  @keyframes gopulse { 0%, 100% { border-color: var(--gold); } 50% { border-color: rgba(255, 215, 106, 0.35); } }
+  .card.lift { transform: scale(1.06); z-index: 1; }
+  #hand.held .card:not(.lift), .card.held { opacity: 0.5; }
+  .card.shake { animation: shake .2s linear; } .card.shake .p { color: var(--loses); }
+  @keyframes shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-4px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
+  .card.flash::after { content: ''; position: absolute; inset: -1px; border-radius: 8px; background: #FFFFFF; pointer-events: none; animation: cardflash 120ms ease-out forwards; }
+  @keyframes cardflash { from { opacity: 0.9; } to { opacity: 0; } }
+  .card.nudge { animation: nudge 200ms ease-in-out; }   /* a tap with no advice to follow (§4.4): the card dim-pulses 200 ms; drag.js sets the class */
+  @keyframes nudge { 50% { opacity: 0.35; } }
+
+  #flash { position: fixed; inset: 0; z-index: 9; background: #FFFFFF; opacity: 0; pointer-events: none; }
+
+  #end, #nogl { position: fixed; inset: 0; z-index: 20; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(5, 6, 13, 0.82); text-align: center; }
+  #end.on, #nogl.on { display: flex; }
+  #endword, .word { font-size: 34px; font-weight: 900; letter-spacing: .25em; color: var(--gold); }
+  #endline { max-width: 90vw; line-height: 1.7; font-size: 12px; letter-spacing: .08em; color: var(--ink); }
+  #again { height: 44px; padding: 0 28px; border: 2px solid var(--gold); border-radius: 10px; color: var(--gold); font-size: 14px; font-weight: 800; letter-spacing: .2em; }
+
+  /* the desk's plate is bigger (§4.1: 18 px phone / 26 desk); the phone glasses keep 18 */
+  @media (min-width: 1000px) and (orientation: landscape) { #plate { font-size: 26px; } }
+
+  /* portrait is 390 px wide: a long plate wraps to two lines of 22 (still 44 tall - at .10em even the longest
+     wave plate, a four-card wave with a two-digit number, fits two in the probe's font; a wider fallback font
+     may take three, still centred, the top being the centre), balanced so a wave plate breaks after its name
+     (WAVE 2 · THE KNIFE HOUR · / ▲ ● ⬢ → LEFT · ● answers); the banner stacks its counts under its words. The
+     card's role line keeps its glyph (§4.2's four-row face is glyph + job) and the card's side padding is 4, not
+     6, so the row has 79 px (89 − 2·4 − 2 border) for the longest pair's 71.4 (the numbers at .card .role): headroom
+     for a phone whose system face runs a little wider than the probe's Segoe UI. The plate stays ONE inline flow: announce.js
+     writes a text run, the gold <b> answer glyph and ' answers' as siblings, and a flex or grid box would seat
+     them as three items out of order; a block keeps the sentence, and align-content centres a single line. */
+  @media (orientation: portrait) {
+    #plate { display: block; align-content: center; height: auto; min-height: 44px; line-height: 22px; padding: 0 12px; white-space: normal; text-wrap: balance; letter-spacing: .10em; text-align: center; }
+    #banner { grid-template-columns: 1fr; row-gap: 2px; }
+    #banner .txt { white-space: normal; }
+    .card { padding: 4px 4px 5px; }
+    .card.go { padding: 3px 3px 4px; }
+  }
+
+  /* the minimap rects of §1 */
+  #minimap { right: 12px; bottom: calc(var(--hand) + 8px); width: 240px; height: 133px; }
+  @media (orientation: portrait) { #minimap { right: 8px; bottom: calc(var(--hand) + 8px); width: 84px; height: 150px; } #banner { left: 8px; right: 100px; } }
+  @media (max-width: 999px) and (orientation: landscape) { #minimap { right: calc(8px + var(--sar)); top: calc(var(--top) + 8px); bottom: auto; width: 160px; height: 89px; } }
 </style>
 </head>
 <body>
 <canvas id="field"></canvas>
-<div id="strip"></div>
+<div id="strip">
+  <div id="energy">◆ 0 +0/s</div>
+  <div id="clock">8:00</div>
+  <div id="lanes"><button class="lane" data-lane="0" type="button"><b class="k">T</b><span class="ar">—</span></button><button class="lane" data-lane="1" type="button"><b class="k">C</b><span class="ar">—</span></button><button class="lane" data-lane="2" type="button"><b class="k">B</b><span class="ar">—</span></button></div>
+</div>
+<button id="more" type="button" aria-label="more">⋯</button>
+<div id="sheet"><button id="sound" type="button">SOUND ON</button><button id="temper" type="button">NORMAL</button><div id="stamp">v0.6.0 · VECTOR · THE BREACH</div></div>
+<div id="surge"><div class="bar"></div><div class="txt">0%</div></div>
+<div id="plate"></div>
+<div id="banner"><span class="txt"></span><span class="right"></span><span class="sub"></span></div>
+<div id="minimap"></div>
 <div id="labels"></div>
-<div id="stamp">v0.5.0 · VECTOR · THE POINTER</div>
-<div id="views"><button id="vwhole" class="on">WHOLE</button><button id="vaction">ACTION</button><button id="vmute">SOUND ON</button><button id="vtemper" title="the captain's temper: tap to change (a new match)">NORMAL</button></div>
-<div id="hint"><b>TAP THE GLOWING CARD</b><span>it marches to the marked well · wells pay energy</span></div>
-<div id="fortify">FORTIFY THIS WELL · 150</div>
-<div id="bar"></div>
-<div id="end"><div id="endword"></div><div id="endline"></div><button id="again">PLAY AGAIN</button></div>
-<div id="nogl"><div id="endword">NO WEBGL2</div><div>this field needs a browser with WebGL2</div></div>
+<div id="hand"></div>
+<div id="flash"></div>
+<div id="end"><div id="endword"></div><div id="endline"></div><button id="again" type="button">PLAY AGAIN</button></div>
+<div id="nogl"><div class="word">NO WEBGL2</div><div>this field needs a browser with WebGL2</div></div>
 <script type="module" src="src/main.js"></script>
 </body>
 </html>

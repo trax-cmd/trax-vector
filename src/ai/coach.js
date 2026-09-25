@@ -1,43 +1,187 @@
-// coach.js — THE COACH, as a function. From the field and a snapshot it returns the one next thing: what
-// kind of move, where, against which shape, with which shapes, a LABEL of a few words and the reason in
-// one clause. The glass makes the card glow and marks the place; the coached player (ai/coached.js) makes
-// the move. One advice, two readers, so a person who follows the glow is playing exactly the policy the
-// tempers were measured against.
-import { ROLES, ROLE_GLYPH, BEATS } from '../sim/library.js';
+// coach.js — THE COACH, as a function. From the snapshot it returns the one next thing: a VERB, a lane,
+// an x, the enemy role it answers, the roles that answer it, the card to tap and the reason in one clause
+// (SPEC-v0.6 §6.3). The glass makes that card glow and pulses that lane's front bar gold; the coached
+// player (coached.js) makes the same move; so a person who follows the glow plays exactly the policy the
+// tempers were measured against. The lane readers below are shared with the captain (bot.js): both sides
+// read the field with the same eyes, and the only difference is who is asked to act.
+// It reads nothing but the snapshot (§3.8) and the till: sim.price(b).
+import { ROLES, ROLE_GLYPH, LOSES } from '../sim/library.js';
+import { GATE_X, KEEP_X, CP_X, CENTRE, slotsToward, laneWord, pointName } from '../sim/lanes.js';
 
-const g = (q) => ROLE_GLYPH[q];
-const ans = (qs) => qs.map((q) => g(q)).join(' ');
+export const VERBS = ['DEFEND', 'ALARM', 'SURGE', 'BREAK', 'TAKE', 'PUSH'];
+export const WEAK_DEPTH = 1500;   // an enemy front this close to a gate is a threat (§6.3 rule 1, §8 rule 1)
+export const HIT_AGO = 3;         // a gate hit this many seconds ago is a threat
+export const SURGE_FULL = 10000;  // the meter's top (§5.1); a surge fires only from a full meter
+export const SURGE_SHARE = 0.4;   // the share of a side's fielded energy that makes a lane its hammer
+export const SURGE_REACH = 1300;  // the anvil: an enemy point, gate or keep this close to the hammer's front
+// THE TILL DRIFT: a queued order is applied one tick after the snapshot it was judged on, and the clock's multiplier
+// has stepped by then, so a price can round up one diamond. Every buy that goes through the queue keeps that diamond
+// in hand. The glass's own tap applies at once and needs no margin, so pickCard() stays exact for the glowing card.
+export const TILL_DRIFT = 1;
+export const afford = (price, energy) => price + TILL_DRIFT <= energy;
 
-export function advise(sim, team, snap) {
-  if (sim.result || !snap) return null;
-  const me = team, them = 1 - team, e = sim.energy[me], o = sim.o;
-  const mine = snap.towers.filter((t) => t.team === me && t.alive);
-  const theirs = snap.towers.filter((t) => t.team !== me && t.alive);
-  if (!mine.length || !theirs.length) return null;
-  const nearMine = (list) => { let b = null, bd = Infinity; for (const w of list) for (const t of mine) { const dx = w.x - t.x, dy = w.y - t.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; b = w; } } return b; };
-  const myWells = snap.wells.filter((w) => w.owner === me), openWells = snap.wells.filter((w) => w.owner < 0), theirWells = snap.wells.filter((w) => w.owner === them);
-  const f = snap.fielded[them]; let top = -1, tv = 0; for (let q = 0; q < 6; q++) if (f[q] > tv) { tv = f[q]; top = q; }
-  const answers = top >= 0 ? [0, 1, 2, 3, 4, 5].filter((q) => BEATS[q].includes(top)) : [];
-  const enemyOn = (w) => (me === 0 ? w.east : w.west), myOn = (w) => (me === 0 ? w.west : w.east);
-  const income = Math.round(sim.income[me]);
-  // 1. a stronghold or a well of mine under attack
-  const hotT = mine.slice().sort((a, b) => b.threat - a.threat)[0];
-  if (hotT && hotT.threat > 120) return { kind: 'hold', target: hotT.i, role: top, answers, label: 'HOLD YOUR STRONGHOLD', why: top >= 0 ? `they bring ${g(top)} · ${ans(answers)} beats it` : 'they are at your gate' };
-  const hotW = myWells.filter((w) => enemyOn(w) > 80).sort((a, b) => enemyOn(b) - enemyOn(a))[0];
-  if (hotW) return { kind: 'hold', target: 1000 + hotW.i, role: top, answers, label: 'HOLD YOUR WELL', why: top >= 0 ? `they bring ${g(top)} · ${ans(answers)} beats it` : 'they are on it' };
-  // 2. the opening
-  const marching = snap.wells.filter((w) => w.owner !== me && myOn(w) > 0);
-  if (sim.S.stats.musters[me] === 0) { const w = nearMine(openWells); return { kind: 'first', target: w ? 1000 + w.i : theirs[0].i, role: -1, answers: [], label: 'TAP THE GLOWING CARD', why: `it marches to the marked well · wells pay energy, +${o.wellIncome}/s each` }; }
-  if (myWells.length === 0) { const w = nearMine(openWells.filter((q) => !marching.includes(q))) || nearMine(openWells); return { kind: 'claim', target: w ? 1000 + w.i : theirs[0].i, role: -1, answers: [], label: 'CLAIM ANOTHER WELL', why: `your first battalion is marching · a well turns ${me === 0 ? 'cyan' : 'red'} when you stand on it` }; }
-  // 3. claim while there is room
-  if (myWells.length < 5 && openWells.length) { const w = nearMine(openWells.filter((q) => !marching.includes(q))) || nearMine(openWells); return { kind: 'claim', target: 1000 + w.i, role: -1, answers: [], label: 'CLAIM THE MARKED WELL', why: `${myWells.length} well${myWells.length > 1 ? 's' : ''} · +${income}/s · more wells, more energy` }; }
-  // 4. a fort when the purse allows and a quiet well waits
-  const quiet = myWells.filter((w) => !w.fort && enemyOn(w) < 40);
-  const forts = myWells.filter((w) => w.fort).length;
-  if (e >= o.fortifyCost && quiet.length && forts < Math.max(1, myWells.length >> 1)) { const w = nearMine(quiet); return { kind: 'fortify', target: 1000 + w.i, role: -1, answers: [], label: 'FORTIFY THE MARKED WELL', why: `tap the well, then FORTIFY · a warden guards it, it pays +${o.wellIncome + o.fortifyBonus}/s` }; }
-  // 5. what they field, answered where it stands - the enemy well nearest my line, or their weakest stronghold
-  const weak = theirs.slice().sort((a, b) => a.hp - b.hp)[0];
-  if (top >= 0 && tv > 0) { const w = nearMine(theirWells); return { kind: 'answer', target: w ? 1000 + w.i : weak.i, role: top, answers, label: `ANSWER ${g(top)} WITH ${ans(answers)}`, why: `they field ${g(top)} ${ROLES[top]} · ${ans(answers)} beats it · the glowing card goes to the mark` }; }
-  if (theirWells.length > myWells.length) { const w = nearMine(theirWells); return { kind: 'take', target: 1000 + w.i, role: -1, answers: [], label: 'TAKE THEIR WELL', why: `they hold ${theirWells.length} wells to your ${myWells.length}` }; }
-  return { kind: 'push', target: weak.i, role: top, answers, label: 'BREAK THEIR STRONGHOLD', why: `${myWells.length} wells · +${income}/s · hold a card to pour on the mark` };
+const total = (a) => a[0] + a[1] + a[2] + a[3] + a[4] + a[5];
+const glyph = (q) => ROLE_GLYPH[q];
+const glyphs = (qs) => qs.map(glyph).join(' ');
+const KEEP = 1;   // T.kind: 0 a gate, 1 a keep (§3.2)
+
+// the role with the most energy in a fielded row, −1 when the row is empty
+export function topRole(fielded) {
+  let best = -1, most = 0;
+  for (let q = 0; q < 6; q++) if (fielded[q] > most) { most = fielded[q]; best = q; }
+  return best;
+}
+
+// the role a wave is named by: the most frequent in its list, the first listed on a tie
+export function waveTop(roles) {
+  const n = [0, 0, 0, 0, 0, 0];
+  let best = -1;
+  for (const q of roles) { n[q]++; if (best < 0 || n[q] > n[best]) best = q; }
+  return best;
+}
+
+// a side's living keeps, counted off the snapshot's strongholds
+const keepsAlive = (snap, team) => snap.towers.reduce((n, t) => n + (t.team === team && t.kind === KEEP && t.alive ? 1 : 0), 0);
+
+// one lane as a side reads it: who fields what, where the fronts stand, what the next point is, whether an order
+// can even be mustered there and whether there is anything left to break at its far end
+export function readLane(snap, team, l, keeps = [keepsAlive(snap, 0), keepsAlive(snap, 1)]) {
+  const L = snap.lanes[l], them = 1 - team;
+  const own = total(L.fielded[team]), enemy = total(L.fielded[them]);
+  const ownFront = team === 0 ? L.frontW : L.frontE, enemyFront = team === 0 ? L.frontE : L.frontW;
+  const depth = Math.abs(GATE_X[team] - enemyFront), hitAgo = L.gateHitAgo[team];
+  const order = slotsToward(team);
+  const nextSlot = order.find((s) => L.held[s] !== team) ?? -1;      // by the ORDER RULE the first point not his is the next capturable
+  const enemySlot = order.find((s) => L.held[s] === them) ?? -1;     // the nearest point of theirs ahead of his front
+  const gateDead = L.gateHp[them] <= 0;
+  // FINISHED: their gate is down and no keep of theirs lives - a card sent here walks to nothing and idles (§3.6 stage 5)
+  const finished = gateDead && keeps[them] === 0 ? 1 : 0;
+  // MUSTERABLE: his own gate lives, or a keep of his does and the bodies can walk the yard to the lane head; else the sim refuses
+  const musterable = L.gateHp[team] > 0 || keeps[team] > 0 ? 1 : 0;
+  // THE ANVIL for a surge: their nearest point ahead, else their gate, else (the gate dead) their keeps; a finished lane has none
+  const anvilX = enemySlot >= 0 ? CP_X[enemySlot] : !gateDead ? GATE_X[them] : KEEP_X[them];
+  return {
+    lane: l, own, enemy,
+    top: topRole(L.fielded[them]), ownTop: topRole(L.fielded[team]),
+    ownFront, enemyFront, depth, hitAgo,
+    weak: depth < WEAK_DEPTH || hitAgo < HIT_AGO,
+    // THE WALK-IN: they field a battalion in a lane he fields nothing in - nothing stands between it and his gate, whatever the
+    // front reads (the front moves only as points fall, four of five before the depth test wakes); the coach alone reads this
+    walkIn: enemy > 0 && own === 0,
+    nextSlot, nextX: nextSlot >= 0 ? CP_X[nextSlot] : gateDead ? KEEP_X[them] : GATE_X[them],   // past the enemy gate's x means the keeps (§3.6)
+    reach: finished ? Infinity : Math.abs(anvilX - ownFront),
+    centreHeld: L.held[CENTRE] === team,
+    centreOpen: nextSlot === CENTRE,   // the centre is the next point: not his, and every point before it is
+    gateOpen: nextSlot < 0,            // all five held: the gate (or the keeps) is the next point
+    gateDead, finished, musterable,
+  };
+}
+
+// the three lanes, each with its share of the side's fielded energy
+export function readLanes(snap, team) {
+  const keeps = [keepsAlive(snap, 0), keepsAlive(snap, 1)];
+  const lanes = [0, 1, 2].map((l) => readLane(snap, team, l, keeps));
+  const fielded = lanes[0].own + lanes[1].own + lanes[2].own;
+  for (const L of lanes) L.share = fielded ? L.own / fielded : 0;
+  return lanes;
+}
+
+// how urgent a weak lane is: a gate under fire first, then the shallowest enemy front
+export const urgency = (L) => (L.hitAgo < HIT_AGO ? 0 : L.depth);
+
+// the lane a full meter should be dragged onto, −1 when there is none: the hammer over the anvil (§6.3 rule 3, §8 rule 4)
+export function surgeLane(snap, team, lanes) {
+  if (snap.surge[team] < SURGE_FULL) return -1;
+  const fit = lanes.filter((L) => L.share >= SURGE_SHARE && L.reach <= SURGE_REACH);
+  return fit.length ? fit.reduce((a, b) => (b.own > a.own ? b : a)).lane : -1;
+}
+
+// the card to tap: the cheapest affordable answer; with none, the dearest affordable (a body in the lane
+// beats no body, and a person taps the big card); −1 when nothing is affordable and the tap waits
+export function pickCard(sim, deck, answers, budget) {
+  let cheap = -1, cheapest = Infinity, dear = -1, dearest = -1;
+  deck.forEach((b, i) => {
+    const p = sim.price(b);
+    if (p > budget) return;
+    if (answers.includes(b.role) && p < cheapest) { cheap = i; cheapest = p; }
+    if (p > dearest) { dear = i; dearest = p; }
+  });
+  return cheap >= 0 ? cheap : dear;
+}
+
+// the six rules of §6.3 in order, over the lanes an order can be mustered into; glass names the lanes (§1) and
+// defaults to his hand, the portrait
+export function advise(sim, team, snap, glass = 'portrait') {
+  if (!snap || snap.result) return null;
+  const them = 1 - team, deck = snap.decks[team], energy = snap.energy[team];
+  const lanes = readLanes(snap, team).filter((L) => L.musterable);
+  if (!lanes.length) return null;   // no stronghold of his stands: the doom is on him and no order is taken
+  const word = (l) => laneWord(glass, team, l);
+  const on = (l) => (l === 1 ? 'in the ' : 'on the ') + word(l);
+  const say = (verb, L, x, top, why) => {
+    const answers = top >= 0 ? LOSES[top] : [];
+    return { verb, lane: L.lane, x, role: top, answers, card: pickCard(sim, deck, answers, energy), why };
+  };
+  const bring = (L) => `they bring ${glyph(L.top)} ${ROLES[L.top]} ${on(L.lane)} and ${glyphs(LOSES[L.top])} beats it`;
+  // THE OPENING: until his first battalion stands nothing of his is anywhere, and the coach's one word is PUSH CENTRE (§3.7)
+  const opening = lanes.every((L) => L.own === 0);
+
+  // 1. DEFEND: an enemy front within 1,500 of his gate, or a gate hit within 3 s - the most urgent lane, at his front; then, once he
+  // has opened, a WALK-IN (readLane): a lane they field and he does not, the heaviest first, at his next point up that lane.
+  // THE WALK-IN IS ADDED TO §6.3 ON THE MEASURE. The rule names the two door tests alone, but the captain opens into every lane at
+  // the bell (§3.7) and the door tests wake only once a wing has lost four points; a coach with the two alone left the coached side's
+  // wings empty for 24 s of every match, the captain's battalions walked them to the gate unmet, and the proof line's 'surge full on
+  // both sides before the first gate hit' read 3/8 at every value of the lever - the west had nothing to kill and nothing to capture
+  // off the centre lane. A person who sees an enemy column walk an empty lane sends someone; the coach now says so. Its x is the next
+  // point, not the front: with nothing held the front is the gate's doorstep (1500), where the answer stands eight seconds quiet before
+  // the march walks it on; at the first point it captures on arrival and meets the column a point further out (measured: the row 7/8
+  // at the doorstep and 8/8 at the point; the coached side's wins at NORMAL 2-6 at the doorstep and 3-5 at the point, the yardstick's
+  // own reading before the walk-in).
+  const weak = lanes.filter((L) => L.weak || (!opening && L.walkIn)).sort((a, b) => urgency(a) - urgency(b) || b.enemy - a.enemy || a.lane - b.lane)[0];
+  if (weak) {
+    const why = weak.top < 0 ? `they are at your gate ${on(weak.lane)}` : weak.weak ? bring(weak) : `${glyph(weak.top)} ${ROLES[weak.top]} walks the ${word(weak.lane)} unmet and ${glyphs(LOSES[weak.top])} beats it`;
+    return say('DEFEND', weak, weak.weak ? weak.ownFront : weak.nextX, weak.top, why);
+  }
+
+  // 2. ALARM: a wave they announced, answered at his front in that lane; the bell's plate names every lane (lane −1,
+  // WAVE 1 · THE SPEARHEAD → ALL LANES, §5.4) and matches none, so it alarms nothing and t = 0 stays PUSH CENTRE (§3.7)
+  const wave = snap.wave[them], alarm = wave && lanes.find((L) => L.lane === wave.lane);
+  if (alarm) {
+    const top = waveTop(wave.roles);
+    return say('ALARM', alarm, alarm.ownFront, top, `${wave.name} comes ${on(alarm.lane)} · ${glyphs(LOSES[top])} answers ${glyph(top)}`);
+  }
+
+  // 3. SURGE: the meter is full and a lane holds his hammer over their anvil
+  const surge = surgeLane(snap, team, lanes);
+  if (surge >= 0) {
+    const L = lanes.find((q) => q.lane === surge);
+    return say('SURGE', L, L.ownFront, L.top, `the surge is full and your ${glyph(L.ownTop)} hold the ${word(surge)} · drag it there`);
+  }
+
+  // 4. BREAK: a lane whose next point is their gate or, the gate dead, their keeps - the one where he fields the most
+  const open = lanes.filter((L) => L.gateOpen && !L.finished).sort((a, b) => b.own - a.own)[0];
+  if (open) {
+    const why = open.gateDead ? `their gate ${on(open.lane)} is open · the keeps are next`
+      : open.top >= 0 ? `their gate ${on(open.lane)} stands alone · ${glyphs(LOSES[open.top])} beats what guards it`
+      : `their gate ${on(open.lane)} stands alone`;
+    return say('BREAK', open, open.nextX, open.top, why);
+  }
+
+  // 5. TAKE: a centre that is the next point and not his, the least defended first
+  const take = lanes.filter((L) => L.centreOpen).sort((a, b) => a.enemy - b.enemy || a.lane - b.lane)[0];
+  if (take) return say('TAKE', take, CP_X[CENTRE], take.top, take.lane === 1 ? 'the centre pays 12/s' : `the centre ${on(take.lane)} pays 12/s`);
+
+  // 6. PUSH: his best lane by fielded advantage, tie the enemy's shallowest front, tie the centre - at its next point;
+  // a finished lane comes last, since nothing sent there can fight
+  const ranked = lanes.slice().sort((a, b) => a.finished - b.finished || (b.own - b.enemy) - (a.own - a.enemy) || b.depth - a.depth || Math.abs(a.lane - 1) - Math.abs(b.lane - 1) || a.lane - b.lane);
+  // THE OPENING IS PUSH CENTRE (§3.7, §6.3): until his first battalion stands, the advantage sort says nothing about him -
+  // it would only send him where the captain's tick-1 drops are thinnest, a wing - so with nothing of his fielded the lane
+  // is the centre whatever they dropped, at the bell and a second and a half after it alike; the sort decides only when
+  // the centre cannot take an order (unmusterable, or nothing left to break there)
+  const push = (opening && ranked.find((L) => L.lane === 1 && !L.finished)) || ranked[0];
+  // the next point by name; with all five held (only a finished lane reaches here) the far end itself
+  const point = push.nextSlot >= 0 ? pointName(glass, team, push.lane, push.nextSlot) : `${word(push.lane)} · THEIR ${push.gateDead ? 'KEEPS' : 'GATE'}`;
+  const step = opening ? `the centre pays 12/s · ${point} is the first step` : `${point} is the next step`;
+  const why = push.top >= 0 ? `${step} · ${glyphs(LOSES[push.top])} beats their ${glyph(push.top)}` : step;
+  return say('PUSH', push, push.nextX, push.top, why);
 }
