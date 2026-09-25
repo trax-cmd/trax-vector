@@ -11,23 +11,29 @@ Working title VECTOR. The name is his call (open, below).
 
 "We're going to create a whole new game. I mean, the way these allies work is crap. But the first thing we're going to do is we're going to lay the foundation for a whole new game. It's not going to be any more sprites. It's going to be VFX only. And what we're going to do is we're only going to use orbs and cubes or squares, just shapes, essentially, polygons, that are going to have different weapons but it's going to be just interesting VFX but we're going to harness the power of AI and create incredible variety which is what you're capable of doing okay so you have to think on a massive scale of making a new game with incredible variety and we're just deploying against a battlefield. And it's going to be viewed from the top down, like a strategy game. And basically, from different points of the map, I could deploy different units to attack different towers. So, basically, maybe the enemy has five towers, and I have five towers, and we're looking from the top down. And from each tower, I could deploy a variety of different units and it's going to have to be massive with a massive battle. So this is not a joke. You have to plan out this game and plan out how you want to set up the architecture because it's just going to be simple but it's not going to mimic a game from the 90s. It has to be something that's going to be a hallmark of the AI digital age. With such a crazy variety of units and abilities and effects that it's just going to have emergent gameplay. But in order to do this, you have to really think like a master AI. And you have to make sure you know your actual capabilities. Something that you yourself can play using code. Okay? That you're not going to be confused between what I'm playing and what you're playing. You know, to the point that me and you could play one another. That's really the goal there. So you have to make a game that you yourself can play somehow. I understand it might not be in real time or whatever, but somehow, it would be nice if it was in real time. Some things might have missiles, some things might have electric, something might have this, but all simple VFX you can do. Without having to reiterate and do a bunch of bullshit. Something with beautiful code."
 
-## 1. THE GAME IN ONE PAGE
+## 1. THE GAME IN ONE PAGE (v0.2 THE FIELD OF WELLS)
 
-- **THE FIELD.** A dark ground, 4000 by 2400, seen from above. A faint grid so scale reads.
-- **THE TOWERS.** Five a side in an arc, yours on the west, theirs on the east. 1,500 hp each. A tower
-  is where bodies are born and what the enemy comes to kill.
-- **THE DEPLOY.** Tap a tower of yours, tap an enemy tower to aim, tap a card. The body is born beside
-  your tower and marches on the enemy tower, fighting what it meets on the way. Hold a card to pour.
-  Digits 1–9 deploy from the keyboard.
-- **THE ENERGY.** One pool a side. Every living tower pays 8 a second into it; you open with 600. A body
-  costs its price. (Defaults; the questions at the end.)
-- **THE BODIES.** Six shapes, each a family with a temper: ORBS are light, fast and many; SQUARES are
-  the weight; TRIANGLES strike; HEXAGONS are artillery and hives; RINGS are the field (auras, pulls,
-  stuns); DIAMONDS are the blades. Eighteen are on the panel today; the grammar makes hundreds.
+- **THE FIELD.** A dark ground, 9000 by 5000, seen from above. A faint grid so scale reads. WHOLE shows
+  it all; ACTION follows the fighting; a drag is yours.
+- **THE STRONGHOLDS.** Five a side in an arc, yours on the west, theirs on the east. 2,500 hp each. A
+  stronghold is where battalions muster and what the enemy comes to kill.
+- **THE WELLS.** Twenty-six across the field, neutral at the bell. A side alone on a well turns it in
+  three seconds (six to take an enemy's); a well pays its owner 5 a second. The war is for the wells.
+- **THE MUSTER.** Tap a stronghold of yours, tap a well or an enemy stronghold to aim, tap a card. A
+  BATTALION musters in formation beside your stronghold and marches on the point, fighting what it meets,
+  and holds there. Hold a card to pour. Digits 1–8 from the keyboard.
+- **THE ENERGY.** One pool a side. Every living stronghold pays 6 a second, every well 5; you open with
+  800. A battalion costs its price.
+- **THE SHAPES ARE THE ROLES.** ● ORBS are THE SWARM; ■ SQUARES THE ARMOR; ▲ TRIANGLES THE STRIKE;
+  ⬢ HEXAGONS THE SIEGE; ◯ RINGS THE FIELD; ◆ DIAMONDS THE BLADE. What a body is, you can see. What it
+  beats, the card says - and the card says only what the judge measured (§4).
+- **THE BATTALIONS.** Seventeen in the library, in lines, columns, wedges, rings and clouds; each match
+  drafts eight a side, one of every role and two more, so no two matches hand out the same panel.
 - **THE WEAPONS.** Bolts, homing missiles, beams, chain lightning, pulses, mines, hives that spawn,
   auras that heal. Every one is a line or a ring of light.
 - **THE TRAITS.** Shields, splitting on death, regeneration, kamikaze, EMP, magnetism, cloak.
-- **THE END.** Kill all five of their towers, or hold more tower hp when the clock rings at eight minutes.
+- **THE END.** Kill all five of their strongholds, or hold more stronghold hp when the clock rings at
+  ten minutes. The end card says which of your shapes broke which of theirs.
 - **THE OTHER SIDE.** A captain written in code by default. Two captains can play each other headless.
   Through the wire, a person at a keyboard or a model in a chat commands the east side of a match a
   person is watching in a browser.
@@ -117,7 +123,37 @@ few screen pixels, so the far view is a field of lights.
 A tick has a 33 ms budget. Five thousand bodies spend a tenth of it. The frame at the phone glass:
 sixty a second with the field drawn through SwiftShader (no GPU at all).
 
-## 4. THE GRAMMAR, AND HOW THE VARIETY IS MADE
+## 4. THE TABLE, AND THE JUDGE THAT WRITES IT
+
+A strategy a player can read needs a counter table that is TRUE. I wrote one by mechanics first; the judge
+(`tools/duel.js`) fought every battalion against every other, nine hundred apart, at equal energy, and
+said it was wrong in sixteen places: rings beat everything (the EMP stunned forever), the swarm lost to
+everything (every weapon kills a nine-point body), the coil was an anti-swarm gun in the siege family.
+Four passes of mechanics followed, each checked by the judge: a shorter stun and a gentler magnet; the
+coil to the field and a cannon for the siege; each role's EYE (a striker or a blade takes the weakest it
+can reach and finishes it, a gun takes the biggest beyond its blind ring, the rest take the nearest);
+artillery with a MINIMUM RANGE it cannot fire inside, and strikers and blades that dive under the guns;
+and the price formula itself - a body's price is the root of what it can take times what it can give
+(Lanchester), because the first formula bought a wall of blocks for less than the strikers sent to kill it.
+Then the judge PRICED THE ROLES: five passes, each raising the price of a role that won on average and
+lowering one that lost, until every role was within a tenth of fair - ● 0.63 ■ 1.27 ▲ 0.81 ⬢ 1.86
+◯ 0.86 ◆ 0.84 - and wrote the table it measured at those prices, which is what the cards, the strip's
+ANSWER and the captain's counters all read:
+
+| shape | beats | by |
+|---|---|---|
+| ● SWARM | ▲ STRIKE, ⬢ SIEGE | +0.20, +0.16 |
+| ■ ARMOR | ● SWARM, ▲ STRIKE | +0.29, +0.14 |
+| ▲ STRIKE | ⬢ SIEGE | +0.15 |
+| ⬢ SIEGE | ■ ARMOR, ◯ FIELD | +0.33, +0.17 |
+| ◯ FIELD | ● SWARM | +0.11 |
+| ◆ BLADE | ◯ FIELD, ■ ARMOR, ⬢ SIEGE | +0.34, +0.17, +0.13 |
+
+At the heart, a three-way cycle: squares beat orbs, orbs beat hexagons, hexagons beat squares. The
+triangle hunts hexagons; the diamond hunts rings and squares; the ring checks orbs. A promise the field
+denies is never printed. The judge runs again whenever a body or a rule changes, and the table moves with it.
+
+## 5. THE GRAMMAR, AND HOW THE VARIETY IS MADE
 
 ```
 genome = { id, family: orb|square|tri|hex|ring|diamond,
@@ -143,7 +179,7 @@ genome = { id, family: orb|square|tri|hex|ring|diamond,
   time-slow field, a reflect shield, a chain of tethered bodies, a body that grows on kills, a body that
   turns enemies, a burrower, a wall. Every one composes with every other by construction.
 
-## 5. THE VOCABULARY OF LIGHT
+## 6. THE VOCABULARY OF LIGHT
 
 Death: sparks by size and a ring. Hit: three sparks. Shield: a small white ring. Beam: a bright core
 line inside a wide faint line for a tenth of a second. Arc: the chain's points, each segment jittered
@@ -152,7 +188,7 @@ a ring, twenty sparks. Blink: a ring where it left and a ring where it landed, a
 down: ninety sparks, two rings, a flash. Cold light for the west, hot light for the east; each family a
 shade of its side. The vocabulary grows a word at a time with the abilities.
 
-## 6. PLAYING EACH OTHER
+## 7. PLAYING EACH OTHER
 
 Three levels, honest about what a model can do:
 
@@ -169,7 +205,7 @@ Three levels, honest about what a model can do:
    from anywhere, and lockstep for two people: since the sim is deterministic, two browsers exchanging
    only commands run the same war.
 
-## 7. THE ROADMAP
+## 8. THE ROADMAP
 
 - **v0.1 THE FOUNDATION (this).** Everything above that says "now": the sim, the grammar, eighteen
   bodies, the captain, the light, the hand, the glass, the wire, headless, the road probe. Live.
@@ -181,7 +217,7 @@ Three levels, honest about what a model can do:
 - **v0.5 THE PHONE.** The glass at every size, the pinch and the pour, sound (a synthesized voice per
   family, no samples), the end card's replay.
 
-## 8. THE QUESTIONS, EACH WITH ITS DEFAULT
+## 9. WHAT STANDS UNTIL HE SAYS OTHERWISE
 
 - The name. Default: VECTOR.
 - The economy. Default: 600 to open, 8 a second per living tower, a body costs its price. (The arena's
@@ -192,7 +228,7 @@ Three levels, honest about what a model can do:
 - The sides. Default: the person plays the west; `?team=1` plays the east; `?a=bot&b=bot` spectates.
 - Sound. Default: none in v0.1; synthesized in v0.5.
 
-## 9. THE PROOF STANDARD, AND THE BOARD
+## 10. THE PROOF STANDARD, AND THE BOARD
 
 Done is: the road probe green by real taps on the served page and on the live page, frames viewed,
 the headless numbers printed, no page error. Nothing is claimed that the probe did not touch.
@@ -206,3 +242,21 @@ the headless numbers printed, no page error. Nothing is claimed that the probe d
   orders from it, one command posted from outside (`{op:"deploy", team:1, tower:7, kind:"BLOCK", goal:2}`)
   moved a body in the running match within a second, the snapshot came back through `/state` at tick 120,
   a bad command was refused. Live at https://trax-cmd.github.io/trax-vector/ and probed there.
+
+- **2026-09-24 · THE FIELD OF WELLS (v0.2.0).** His word: "I don't want to make any more judgment calls
+  ... I was able to overwhelm the enemy but I didn't know what I was doing ... something that gives me an
+  idea of a strategy, on a massive scale, battalions, formations, harvesters." The decisions are mine
+  now, and these are they: the field doubled to 9000 by 5000 with twenty-six wells to claim (the economy
+  is territory); battalions in formation instead of single bodies, eight drafted a side; shape = role,
+  with a counter table the judge measured and the cards print; the eye of each role and the blind ring
+  of artillery; a captain that holds what is threatened with the counter to what threatens it, claims
+  wells with cheap hands and saves for waves at the weakest stronghold; WHOLE / ACTION views; the strip
+  reads what THEY FIELD and the ANSWER; the end card says which shape broke which. A hive bears a clutch
+  of twenty-four, not a factory (the first war fielded twenty-seven thousand motes from six hundred
+  musters). Measured: a whole war between two captains in 1.5 s of compute; six drafted seeds fell to
+  the west five times, so the field was tested with the SAME deck on both sides over eight seeds
+  (`tools/mirror.js`): west 3, east 3, draw 2 - the field is fair, the lean was the draft. Proof:
+  vector-road.cjs at the phone glass and on a desk (boot, a tap on a stronghold, on an enemy stronghold,
+  on a well; a card musters eight bodies and charges; the card reads "beats ▲ ⬢"; the strip reads WELLS
+  and ANSWER; the east captain claims wells within ten seconds; a battalion sent across the field meets
+  the enemy and a body falls), the judge's table above, frames viewed.

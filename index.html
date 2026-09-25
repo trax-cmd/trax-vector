@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>TRAX: VECTOR</title>
-<meta name="description" content="A top-down war of shapes and light. Five towers a side. Deploy from any of yours against any of theirs.">
+<meta name="description" content="A top-down war of shapes and light. Five strongholds a side, twenty-six wells to claim, battalions in formation, a shape that beats a shape.">
 <style>
   :root { --ink: #dfe8ff; --dim: #6f7fa6; --gold: #ffd76a; --west: #5cf2ff; --east: #ff6a52; --pane: rgba(8, 10, 20, 0.72); --line: #2a3352; }
   html, body { margin: 0; height: 100%; background: #05060d; color: var(--ink); font: 13px ui-monospace, Menlo, Consolas, monospace; overflow: hidden; -webkit-user-select: none; user-select: none; }
@@ -13,13 +13,20 @@
   #strip .a { color: var(--west); } #strip .b { color: var(--east); } #strip .c { color: var(--gold); } #strip .k { color: var(--dim); }
   #bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 6px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); overflow-x: auto; background: linear-gradient(rgba(5,6,13,0), rgba(5,6,13,0.92) 40%); scrollbar-width: none; }
   #bar::-webkit-scrollbar { display: none; }
-  .card { flex: 0 0 auto; min-width: 66px; padding: 6px 6px 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--pane); text-align: center; cursor: pointer; touch-action: none; transition: opacity .15s, transform .08s; }
+  .card { flex: 0 0 auto; min-width: 84px; padding: 6px 6px 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--pane); text-align: center; cursor: pointer; touch-action: none; transition: opacity .15s, transform .08s; }
   .card:active { transform: scale(0.96); border-color: var(--gold); }
   .card.dim { opacity: 0.35; }
   .card .g { font-size: 18px; line-height: 20px; } .card .g.t0 { color: var(--west); } .card .g.t1 { color: var(--east); }
   .card .n { font-size: 9px; letter-spacing: .1em; color: var(--ink); margin-top: 2px; }
   .card .p { font-size: 15px; font-weight: 800; color: var(--gold); }
   .card .d { font-size: 9px; color: var(--dim); }
+  .card .u { font-size: 10px; color: var(--dim); letter-spacing: .04em; margin-top: 1px; } .card .u i { font-style: normal; font-size: 9px; margin-right: 3px; }
+  .card .w { font-size: 9px; color: var(--ink); letter-spacing: .06em; opacity: .85; }
+  #strip i { font-style: normal; color: var(--dim); font-weight: 600; } #strip b { font-weight: 800; } #strip .r0, #strip .r1, #strip .r2, #strip .r3, #strip .r4, #strip .r5 { color: var(--gold); }
+  #views { position: fixed; left: 8px; top: 30px; display: flex; gap: 6px; z-index: 5; }
+  #views button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--pane); color: var(--dim); font: 700 10px ui-monospace, Menlo, monospace; letter-spacing: .12em; cursor: pointer; }
+  #views button.on { color: var(--gold); border-color: var(--gold); }
+  #endline { max-width: 90vw; line-height: 1.7; }
   #hint { position: fixed; left: 50%; top: 44px; transform: translateX(-50%); padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--pane); color: var(--ink); font-size: 11px; letter-spacing: .06em; pointer-events: none; white-space: nowrap; }
   #end, #nogl { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(5,6,13,0.78); z-index: 20; text-align: center; }
   #endword { font-size: 34px; font-weight: 900; letter-spacing: .25em; color: var(--gold); }
@@ -31,8 +38,9 @@
 <body>
 <canvas id="field"></canvas>
 <div id="strip"></div>
-<div id="stamp">v0.1.0 · VECTOR · THE FOUNDATION</div>
-<div id="hint">TAP A TOWER OF YOURS · TAP AN ENEMY TOWER TO AIM · TAP A CARD TO DEPLOY · HOLD TO POUR</div>
+<div id="stamp">v0.2.0 · VECTOR · THE FIELD OF WELLS</div>
+<div id="views"><button id="vwhole" class="on">WHOLE</button><button id="vaction">ACTION</button></div>
+<div id="hint">TAP A STRONGHOLD OF YOURS · TAP A WELL OR AN ENEMY STRONGHOLD TO AIM · TAP A CARD TO MUSTER A BATTALION · HOLD TO POUR</div>
 <div id="bar"></div>
 <div id="end"><div id="endword"></div><div id="endline"></div><button id="again">PLAY AGAIN</button></div>
 <div id="nogl"><div id="endword">NO WEBGL2</div><div>this field needs a browser with WebGL2</div></div>

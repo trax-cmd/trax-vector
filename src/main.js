@@ -1,10 +1,11 @@
 // main.js — THE LOOP. The sim ticks thirty times a second whatever the frame rate; the frame draws
-// whatever the sim says. Captains tick beside the sim. Everything is exposed on window.VECTOR so a
-// probe, a tool or a relay can drive the same match a person is watching.
+// whatever the sim says. Captains tick beside the sim. The camera has three minds: WHOLE (the field),
+// ACTION (where the bodies are falling), FREE (where you dragged it). Everything is on window.VECTOR so
+// a probe, a tool or a relay drives the same match a person is watching.
 import { createSim, TICK } from './sim/sim.js';
 import { createBot } from './ai/bot.js';
 import { createRenderer } from './render/gl.js';
-import { createVfx, colorOf } from './render/vfx.js';
+import { createVfx, colorOf, NEUTRAL } from './render/vfx.js';
 import { createInput } from './ui/input.js';
 import { createHud } from './ui/hud.js';
 import { createRelayClient } from './ui/relay.js';
@@ -12,7 +13,7 @@ import { createRelayClient } from './ui/relay.js';
 const q = new URLSearchParams(location.search);
 const seed = +(q.get('seed') || ((Date.now() / 1000) | 0) % 100000);
 const sim = createSim({ seed });
-const state = { team: +(q.get('team') || 0), tower: 2, goal: -1, deployed: 0, flash: null, paused: false };
+const state = { team: +(q.get('team') || 0), tower: 2, goal: -1, deployed: 0, flash: null, paused: false, fielded: null, view: 'whole' };
 const bots = [];
 if (q.get('a') === 'bot') bots.push(createBot(sim, 0, { seed }));
 if (q.get('b') !== 'human' && q.get('b') !== 'relay') bots.push(createBot(sim, 1, { seed: seed + 1 }));
@@ -22,25 +23,40 @@ const canvas = document.getElementById('field');
 const R = createRenderer(canvas);
 if (!R) { document.getElementById('nogl').style.display = 'flex'; throw new Error('no webgl2'); }
 const vfx = createVfx(sim.kinds);
-const cam = { x: sim.o.W / 2, y: sim.o.H / 2, zoom: 0.3 };
-function fit() { const pad = 40; cam.zoom = Math.min((canvas.clientWidth - pad) / sim.o.W, (canvas.clientHeight - 120) / sim.o.H); cam.x = sim.o.W / 2; cam.y = sim.o.H / 2 + 30 / cam.zoom; }
+const cam = { x: sim.o.W / 2, y: sim.o.H / 2, zoom: 0.1 };
+const heat = { x: sim.o.W / 2, y: sim.o.H / 2, n: 0 };   // where the fight is: the running centre of hits and deaths
+const view = {
+  whole() { state.view = 'whole'; },
+  action() { state.view = 'action'; },
+  free() { state.view = 'free'; },
+};
+function fitWhole() { const pad = 24; const z = Math.min((canvas.clientWidth - pad) / sim.o.W, (canvas.clientHeight - 150) / sim.o.H); cam.zoom += (z - cam.zoom) * 0.12; cam.x += (sim.o.W / 2 - cam.x) * 0.12; cam.y += (sim.o.H / 2 + 20 / z - cam.y) * 0.12; }
+function followAction() { const z = 0.42; cam.zoom += (z - cam.zoom) * 0.06; cam.x += (heat.x - cam.x) * 0.05; cam.y += (heat.y - cam.y) * 0.05; }
 function deploy(i) {
   if (state.tower < 0 || !sim.T.alive[state.tower] || sim.T.team[state.tower] !== state.team) { state.tower = firstOwn(); if (state.tower < 0) return false; }
-  const ok = sim.apply({ op: 'deploy', team: state.team, tower: state.tower, kind: i, goal: state.goal });
+  const ok = sim.apply({ op: 'deploy', team: state.team, tower: state.tower, batt: i, goal: state.goal });
   if (ok) state.deployed++;
   return ok;
 }
 function firstOwn() { const T = sim.T; let best = -1, bd = Infinity; for (let t = 0; t < T.n; t++) { if (T.team[t] !== state.team || !T.alive[t]) continue; const d = Math.abs(T.y[t] - sim.o.H / 2); if (d < bd) { bd = d; best = t; } } return best; }
 state.tower = firstOwn();
 const hud = createHud(sim, state, deploy);
-createInput(canvas, cam, sim, state, deploy, fit);
-fit(); window.addEventListener('resize', fit);
+createInput(canvas, cam, sim, state, deploy, view);
+document.getElementById('vwhole').addEventListener('click', view.whole);
+document.getElementById('vaction').addEventListener('click', view.action);
 document.getElementById('again').addEventListener('click', () => { const u = new URL(location.href); u.searchParams.set('seed', String((seed * 7 + 13) % 100000)); location.href = u.toString(); });
 
 // ---- what the frame draws
-const T = sim.T, U = sim.U, P = sim.P, MN = sim.MN, kinds = sim.kinds, FAM = ['orb', 'square', 'tri', 'hex', 'ring', 'diamond'];
+const T = sim.T, U = sim.U, P = sim.P, MN = sim.MN, WL = sim.WL, kinds = sim.kinds;
 function paint(out) {
   const now = performance.now() / 1000;
+  for (let w = 0; w < WL.n; w++) {
+    const o = WL.owner[w], c = o < 0 ? NEUTRAL : colorOf(o, 'base'), p = WL.prog[w];
+    out.body(WL.x[w], WL.y[w], sim.o.wellR * 0.7, 4, c[0], c[1], c[2], o < 0 ? 0.35 : 0.7, 0, 0.5);
+    out.body(WL.x[w], WL.y[w], sim.o.wellR * 0.28, 5, c[0], c[1], c[2], 0.5 + 0.4 * Math.abs(p), now * 0.6, 0.8);
+    if (p !== 0 && Math.abs(p) < 1) { const pc = colorOf(p > 0 ? 0 : 1, 'base'); out.body(WL.x[w], WL.y[w], sim.o.wellR * (0.3 + 0.5 * Math.abs(p)), 4, pc[0], pc[1], pc[2], 0.5, 0, 0.3); }
+    if (state.goal === 1000 + w) out.body(WL.x[w], WL.y[w], sim.o.wellR * 1.3, 5, 1, 0.9, 0.5, 0.45 + 0.3 * Math.sin(now * 6), now, 0.4);
+  }
   for (let t = 0; t < T.n; t++) {
     const c = colorOf(T.team[t], 'base'), alive = T.alive[t], hp = T.hp[t] / sim.o.towerHp;
     if (alive) {
@@ -71,20 +87,28 @@ function paint(out) {
 }
 
 // ---- the loop
-let last = performance.now(), acc = 0, fps = 0, fpsN = 0, fpsT = 0;
+let last = performance.now(), acc = 0, fps = 0, fpsN = 0, fpsT = 0, snapAt = 0;
 function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (!state.paused) {
     acc += dt; let steps = 0;
-    while (acc >= TICK && steps < 4) { for (const b of bots) b.tick(); if (relay) relay.tick(); sim.step(); vfx.take(sim.events); acc -= TICK; steps++; }
+    while (acc >= TICK && steps < 4) {
+      for (const b of bots) b.tick(); if (relay) relay.tick();
+      sim.step(); vfx.take(sim.events);
+      for (const e of sim.events) if (e.t === 'death' || e.t === 'towerHit' || e.t === 'capture') { const w = e.t === 'death' ? 1 : 6; heat.x += (e.x - heat.x) * 0.02 * w; heat.y += (e.y - heat.y) * 0.02 * w; }
+      acc -= TICK; steps++;
+    }
     if (steps === 4) acc = 0;
   }
+  if (sim.tick >= snapAt) { snapAt = sim.tick + 30; state.fielded = sim.snapshot().fielded; }
+  if (state.view === 'whole') fitWhole(); else if (state.view === 'action') followAction();
   vfx.update(dt);
   R.frame(cam, sim.o.W, sim.o.H, paint);
-  hud.sync();
+  hud.sync(now);
+  document.getElementById('vwhole').classList.toggle('on', state.view === 'whole'); document.getElementById('vaction').classList.toggle('on', state.view === 'action');
   fpsN++; fpsT += dt; if (fpsT >= 1) { fps = fpsN / fpsT; fpsN = 0; fpsT = 0; }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
-window.VECTOR = { sim, state, cam, vfx, bots, deploy, fit, get fps() { return fps; }, get counts() { return { ...R.counts, ...vfx.counts }; }, seed };
+window.VECTOR = { sim, state, cam, vfx, bots, deploy, view, heat, get fps() { return fps; }, get counts() { return { ...R.counts, ...vfx.counts }; }, seed };

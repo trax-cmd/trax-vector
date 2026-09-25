@@ -26,7 +26,7 @@ const WEAPON_BASE = {
   arc:     { dmg: 9,  rate: 1.6, range: 240, hops: 3, hopRange: 150, decay: 0.7 },
   pulse:   { dmg: 14, rate: 0.9, range: 110 },
   mine:    { dmg: 60, rate: 0.25, range: 90, trigger: 40 },
-  spawn:   { dmg: 0,  rate: 0.2, range: 500, child: 'MOTE', count: 3 },
+  spawn:   { dmg: 0,  rate: 0.2, range: 500, child: 'MOTE', count: 3, clutch: 24 },   // clutch: how many children a carrier can bear in its life - a hive is a wave, not a factory
   aura:    { dmg: 6,  rate: 2,   range: 160 },   // dmg is the heal per second to allies in range
 };
 
@@ -77,11 +77,13 @@ function dpsOf(d) {
   }
 }
 
-// The price of a body: what it can take, what it can give, how far and how fast. One formula for the
-// hand-written and the generated alike, so the ledger's corrections mean the same thing everywhere.
+// The price of a body: the root of what it can take times what it can give (Lanchester's law - a body that
+// lasts twice as long is worth as much as one that hits twice as hard), scaled by its reach, plus its speed,
+// its shield and its traits. One formula for the hand-written and the generated alike, so the judge's
+// corrections mean the same thing everywhere.
 export function costOf(d) {
-  const reach = Math.sqrt(Math.max(60, d.w.range) / 200);
-  let c = d.hp / 8 + d.dps * reach * 1.1 + d.speed / 30 + (d.shieldMax || 0) / 10;
+  const reach = Math.sqrt(Math.sqrt(Math.max(60, d.w.range) / 200));
+  let c = 0.9 * Math.sqrt((d.hp + (d.shieldMax || 0) * 0.7) * Math.max(2, d.dps)) * reach + d.speed / 40 + (d.shieldMax || 0) / 12;
   for (const t in d.traits) c += TRAIT_COST[t] || 0;
   if (d.move === 'phase') c += 10;
   if (d.move === 'hold') c *= 0.85;

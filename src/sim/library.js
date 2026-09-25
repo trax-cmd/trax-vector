@@ -1,39 +1,99 @@
-// library.js — THE FIRST ROSTER, written by hand so the grammar has voices before the generator has
-// a thousand. Eighteen bodies across the six shapes. Costs are computed from the grammar unless pinned;
-// the ledger (tools/balance.js) moves them once the duels have spoken.
+// library.js — THE FIRST ROSTER, THE ROLES, THE BATTALIONS AND THE DRAFT.
+// The bodies are written by hand so the grammar has voices before the generator has a thousand. Above
+// them sit the six ROLES - one per shape, so the strategic language is the visual one: a triangle IS a
+// striker - and the BATTALIONS, formations of bodies that are what a commander actually deploys.
+// The counter table is a promise the duel tool (tools/duel.js) checks; the numbers below were tuned
+// until the promise held.
 import { rng32 } from './rng.js';
 import { FAMILIES, MOVES, WEAPONS, TRAITS } from './units.js';
 
 export const LIBRARY = [
-  // ORBS - light, fast, many
-  { id: 'MOTE',   family: 'orb', r: 6,  hp: 8,  speed: 260, move: 'swarm',  weapon: 'bolt', w: { dmg: 3, rate: 3, range: 160 }, tags: ['swarm', 'cheap'] },
-  { id: 'SPARK',  family: 'orb', hp: 22, speed: 240, move: 'zigzag', weapon: 'bolt', w: { dmg: 5, rate: 4, range: 240, count: 2, spread: 0.12 }, tags: ['swarm'] },
-  { id: 'BLOOM',  family: 'orb', r: 12, hp: 40, speed: 170, move: 'march',  weapon: 'bolt', w: { dmg: 6, rate: 2, range: 220 }, traits: ['split'], split: 'MOTE', splitN: 4, tags: ['swarm', 'split'] },
-  { id: 'WISP',   family: 'orb', hp: 18, speed: 200, move: 'phase',  weapon: 'arc',  w: { dmg: 6, rate: 1.4, range: 200, hops: 2 }, tags: ['harass'] },
-  // SQUARES - the weight
-  { id: 'BLOCK',    family: 'square', hp: 160, speed: 90,  move: 'march', weapon: 'missile', w: { dmg: 24, rate: 0.6, range: 400, splash: 70 }, tags: ['tank', 'splash'] },
-  { id: 'BASTION',  family: 'square', r: 19, hp: 220, speed: 70, move: 'march', weapon: 'pulse', w: { dmg: 16, rate: 0.8, range: 120 }, traits: ['shield'], shield: 150, tags: ['tank', 'shield', 'antiswarm'] },
-  { id: 'SLAB',     family: 'square', r: 24, hp: 320, speed: 55, move: 'march', weapon: 'mine', w: { dmg: 70, rate: 0.35, range: 100, trigger: 46 }, traits: ['regen'], tags: ['tank', 'zone'] },
-  // TRIANGLES - the strike
-  { id: 'DART',   family: 'tri', hp: 40, speed: 280, move: 'hop',    weapon: 'beam', w: { dmg: 12, rate: 2.5, range: 280 }, tags: ['strike'] },
-  { id: 'TALON',  family: 'tri', r: 14, hp: 60, speed: 230, move: 'zigzag', weapon: 'arc', w: { dmg: 10, rate: 1.5, range: 240, hops: 4, hopRange: 170 }, tags: ['strike', 'antiswarm'] },
-  { id: 'SHARD',  family: 'tri', r: 9,  hp: 14, speed: 340, move: 'march',  weapon: 'bolt', w: { dmg: 2, rate: 1, range: 90 }, traits: ['kamikaze'], cost: 15, tags: ['suicide', 'cheap'] },
-  // HEXAGONS - the artillery and the hives
-  { id: 'HIVE',      family: 'hex', hp: 130, speed: 60, move: 'hold',  weapon: 'spawn',   w: { child: 'MOTE', count: 3, rate: 0.25, range: 500 }, tags: ['carrier', 'swarm'] },
-  { id: 'ORDNANCE',  family: 'hex', r: 22, hp: 120, speed: 60, move: 'march', weapon: 'missile', w: { dmg: 40, rate: 0.35, range: 640, speed: 360, splash: 110, turn: 3 }, tags: ['artillery', 'splash'] },
-  { id: 'COIL',      family: 'hex', hp: 100, speed: 80, move: 'march', weapon: 'arc',     w: { dmg: 14, rate: 1.2, range: 300, hops: 6, hopRange: 190, decay: 0.8 }, tags: ['antiswarm'] },
-  // RINGS - the field
-  { id: 'HALO',      family: 'ring', hp: 80,  speed: 120, move: 'orbit', weapon: 'aura',  w: { dmg: 8, range: 180 }, traits: ['regen'], tags: ['support', 'heal'] },
-  { id: 'NULL',      family: 'ring', hp: 90,  speed: 110, move: 'orbit', weapon: 'pulse', w: { dmg: 4, rate: 1, range: 150 }, traits: ['emp'], tags: ['support', 'stun'] },
-  { id: 'LODESTONE', family: 'ring', r: 18, hp: 130, speed: 90, move: 'march', weapon: 'pulse', w: { dmg: 18, rate: 0.7, range: 140 }, traits: ['magnet'], tags: ['zone', 'antiswarm'] },
-  // DIAMONDS - the blades
-  { id: 'NEEDLE', family: 'diamond', hp: 30, speed: 320, move: 'phase', weapon: 'beam', w: { dmg: 28, rate: 1.2, range: 260 }, traits: ['cloak'], tags: ['assassin'] },
-  { id: 'PRISM',  family: 'diamond', r: 14, hp: 70, speed: 200, move: 'orbit', weapon: 'beam', w: { dmg: 16, rate: 2, range: 340, pierce: 3 }, tags: ['strike', 'line'] },
+  // ORBS - light, fast, many: THE SWARM
+  { id: 'MOTE',   family: 'orb', r: 6,  hp: 12, speed: 330, move: 'swarm',  weapon: 'bolt', w: { dmg: 3.5, rate: 3.4, range: 180 }, tags: ['swarm', 'cheap'] },
+  { id: 'SPARK',  family: 'orb', hp: 28, speed: 300, move: 'zigzag', weapon: 'bolt', w: { dmg: 5, rate: 4, range: 240, count: 2, spread: 0.12 }, tags: ['swarm'] },
+  { id: 'BLOOM',  family: 'orb', r: 12, hp: 44, speed: 180, move: 'march',  weapon: 'bolt', w: { dmg: 6, rate: 2, range: 220 }, traits: ['split'], split: 'MOTE', splitN: 4, tags: ['swarm', 'split'] },
+  { id: 'WISP',   family: 'orb', hp: 18, speed: 210, move: 'phase',  weapon: 'arc',  w: { dmg: 6, rate: 1.4, range: 200, hops: 2 }, tags: ['harass'] },
+  // SQUARES - the weight: THE ARMOR
+  { id: 'BLOCK',    family: 'square', hp: 170, speed: 95,  move: 'march', weapon: 'missile', w: { dmg: 14, rate: 0.7, range: 380, splash: 60, turn: 2.5 }, tags: ['tank', 'splash'] },
+  { id: 'BASTION',  family: 'square', r: 19, hp: 230, speed: 75, move: 'march', weapon: 'pulse', w: { dmg: 18, rate: 0.9, range: 130 }, traits: ['shield'], shield: 160, tags: ['tank', 'shield', 'antiswarm'] },
+  { id: 'SLAB',     family: 'square', r: 24, hp: 340, speed: 60, move: 'march', weapon: 'mine', w: { dmg: 70, rate: 0.4, range: 110, trigger: 50 }, traits: ['regen'], tags: ['tank', 'zone'] },
+  // TRIANGLES - the strike: THE STRIKE
+  { id: 'DART',   family: 'tri', hp: 42, speed: 290, move: 'hop',    weapon: 'beam', w: { dmg: 18, rate: 2.6, range: 300 }, tags: ['strike'] },
+  { id: 'TALON',  family: 'tri', r: 14, hp: 62, speed: 240, move: 'zigzag', weapon: 'arc', w: { dmg: 10, rate: 1.5, range: 250, hops: 4, hopRange: 170 }, tags: ['strike', 'antiswarm'] },
+  { id: 'SHARD',  family: 'tri', r: 9,  hp: 14, speed: 360, move: 'march',  weapon: 'bolt', w: { dmg: 2, rate: 1, range: 90 }, traits: ['kamikaze'], cost: 15, tags: ['suicide', 'cheap'] },
+  // HEXAGONS - the artillery and the hives: THE SIEGE
+  { id: 'HIVE',      family: 'hex', hp: 140, speed: 65, move: 'hold',  weapon: 'spawn',   w: { child: 'MOTE', count: 3, rate: 0.25, range: 500 }, tags: ['carrier', 'swarm'] },
+  { id: 'ORDNANCE',  family: 'hex', r: 22, hp: 150, speed: 65, move: 'march', weapon: 'missile', w: { dmg: 60, rate: 0.5, range: 720, minRange: 300, speed: 340, splash: 55, turn: 1.6 }, tags: ['artillery', 'splash'] },
+  { id: 'CANNON',    family: 'hex', r: 21, hp: 140, speed: 70, move: 'march', weapon: 'beam',    w: { dmg: 60, rate: 0.6, range: 620, minRange: 270, pierce: 3 }, tags: ['artillery', 'line'] },
+  // RINGS - the field: THE FIELD
+  { id: 'HALO',      family: 'ring', hp: 90,  speed: 130, move: 'orbit', weapon: 'aura',  w: { dmg: 9, range: 190 }, traits: ['regen'], tags: ['support', 'heal'] },
+  { id: 'NULL',      family: 'ring', hp: 100, speed: 120, move: 'orbit', weapon: 'pulse', w: { dmg: 6, rate: 0.6, range: 170 }, traits: ['emp'], tags: ['support', 'stun'] },
+  { id: 'COIL',      family: 'ring', hp: 110, speed: 100, move: 'march', weapon: 'arc',   w: { dmg: 12, rate: 1.1, range: 320, hops: 5, hopRange: 180, decay: 0.8 }, tags: ['antiswarm'] },
+  { id: 'LODESTONE', family: 'ring', r: 18, hp: 140, speed: 95, move: 'march', weapon: 'pulse', w: { dmg: 20, rate: 0.75, range: 150 }, traits: ['magnet'], tags: ['zone', 'antiswarm'] },
+  // DIAMONDS - the blades: THE BLADE
+  { id: 'NEEDLE', family: 'diamond', hp: 34, speed: 330, move: 'phase', weapon: 'beam', w: { dmg: 42, rate: 1.3, range: 270 }, traits: ['cloak'], tags: ['assassin'] },
+  { id: 'PRISM',  family: 'diamond', r: 14, hp: 74, speed: 210, move: 'orbit', weapon: 'beam', w: { dmg: 17, rate: 2, range: 350, pierce: 3 }, tags: ['strike', 'line'] },
 ];
 
-// THE GENERATOR: a genome from a seed. Every field is drawn from the grammar with the family's bias, then
-// priced by the same formula as the hand-written ones. This is how the roster grows to hundreds: the AI
-// writes candidates, the balance ledger and the identity check keep the ones that fight differently.
+// THE ROLES: one per shape. This is the whole strategy a player needs to read the field: shape against
+// shape. THE TABLE IS MEASURED, NOT PROMISED: tools/duel.js fights every battalion against every other at
+// the role prices below and writes BEATS from what it saw (a shape beats another it wins against by more
+// than a tenth). At the heart a three-way cycle - squares beat orbs, orbs beat hexagons, hexagons beat
+// squares - with the triangle hunting hexagons, the diamond hunting rings and squares, the ring checking
+// orbs. The judge's reading of 2026-09-24 (two duels a pair, 1,200 energy a side, both seats):
+//   ● beats ▲ +0.20 ⬢ +0.16 · ■ beats ● +0.29 ▲ +0.14 · ▲ beats ⬢ +0.15 · ⬢ beats ■ +0.33 ◯ +0.17 · ◯ beats ● +0.11 · ◆ beats ◯ +0.34 ■ +0.17 ⬢ +0.13
+export const ROLES = ['SWARM', 'ARMOR', 'STRIKE', 'SIEGE', 'FIELD', 'BLADE'];   // in FAMILIES order: orb, square, tri, hex, ring, diamond
+export const ROLE_GLYPH = ['●', '■', '▲', '⬢', '◯', '◆'];
+export const BEATS = [[2, 3], [0, 2], [3], [1, 4], [0], [4, 1, 3]];   // role r beats BEATS[r], strongest first - the judge's reading, see above
+export const LOSES = ROLES.map((_, r) => ROLES.map((_, q) => q).filter((q) => BEATS[q].includes(r)));
+export const roleOf = (family) => FAMILIES.indexOf(family);
+
+// THE BATTALIONS: what a commander deploys. A formation of bodies with a role and a shape on the field.
+export const FORMS = ['line', 'column', 'wedge', 'ring', 'cloud'];
+export const BATTALIONS = [
+  { id: 'MOTE CLOUD',     role: 0, form: 'cloud',  units: [['MOTE', 18]] },
+  { id: 'SPARK WING',     role: 0, form: 'wedge',  units: [['SPARK', 8]] },
+  { id: 'BLOOM LINE',     role: 0, form: 'line',   units: [['BLOOM', 5], ['MOTE', 6]] },
+  { id: 'PHALANX',        role: 1, form: 'line',   units: [['BLOCK', 4], ['HALO', 1]] },
+  { id: 'BASTION WALL',   role: 1, form: 'line',   units: [['BASTION', 3], ['BLOCK', 2]] },
+  { id: 'SLAB TRAIN',     role: 1, form: 'column', units: [['SLAB', 2], ['BLOCK', 2]] },
+  { id: 'LANCE',          role: 2, form: 'wedge',  units: [['DART', 6]] },
+  { id: 'TALON STORM',    role: 2, form: 'cloud',  units: [['TALON', 4], ['DART', 3]] },
+  { id: 'SHARD RAIN',     role: 2, form: 'cloud',  units: [['SHARD', 14]] },
+  { id: 'SIEGE TRAIN',    role: 3, form: 'column', units: [['ORDNANCE', 3], ['CANNON', 1]] },
+  { id: 'CANNON LINE',    role: 3, form: 'line',   units: [['CANNON', 3], ['HIVE', 1]] },
+  { id: 'HIVE MOTHER',    role: 3, form: 'column', units: [['HIVE', 2], ['ORDNANCE', 1]] },
+  { id: 'NULL FIELD',     role: 4, form: 'ring',   units: [['NULL', 3], ['HALO', 2]] },
+  { id: 'LODESTONE RING', role: 4, form: 'ring',   units: [['LODESTONE', 3], ['NULL', 1]] },
+  { id: 'COIL BATTERY',   role: 4, form: 'line',   units: [['COIL', 3], ['HALO', 1]] },
+  { id: 'NEEDLE PACK',    role: 5, form: 'cloud',  units: [['NEEDLE', 6]] },
+  { id: 'PRISM LINE',     role: 5, form: 'line',   units: [['PRISM', 4], ['NEEDLE', 2]] },
+];
+
+// THE ROLE PRICE: what a role pays on top of its bodies' formula price, set by the judge (tools/duel.js --passes) until
+// every role is worth its cost at equal budgets. The formula prices a body; the judge prices a role.
+export const ROLE_PRICE = [0.63, 1.27, 0.81, 1.86, 0.86, 0.84];   // the judge's reading of 2026-09-24: every role within a tenth of fair at these
+// A battalion's price is its bodies' prices, times its role's price, with a tenth off for the muster.
+export function battalionCost(b, kinds, rolePrice) {
+  let c = 0;
+  for (const [id, n] of b.units) { const k = kinds.find((q) => q.id === id); if (!k) throw new Error(b.id + ' musters unknown ' + id); c += k.cost * n; }
+  return Math.max(20, Math.round(c * 0.9 * ((rolePrice || ROLE_PRICE)[b.role] || 1) / 10) * 10);
+}
+
+// THE DRAFT: eight battalions a side per match - one of every role, then two more - so no two matches
+// hand out the same panel and every panel can answer every role.
+export function draft(seed, n = 8) {
+  const r = rng32(seed);
+  const out = [];
+  for (let role = 0; role < 6; role++) { const pool = BATTALIONS.filter((b) => b.role === role); out.push(r.pick(pool)); }
+  const rest = BATTALIONS.filter((b) => !out.includes(b));
+  while (out.length < n && rest.length) { const i = r.int(rest.length); out.push(rest.splice(i, 1)[0]); }
+  return out.sort((a, b) => a.role - b.role);
+}
+
+// THE GENERATOR: a genome from a seed, drawn from the grammar with the family's bias, priced by the same
+// formula as the hand-written. This is how the roster grows to hundreds: the AI writes candidates, the
+// balance ledger and the identity check keep the ones that fight differently.
 export function generate(seed, id) {
   const r = rng32(seed);
   const family = r.pick(FAMILIES);
@@ -41,12 +101,7 @@ export function generate(seed, id) {
   const move = r() < 0.7 ? r.pick(bias) : r.pick(MOVES);
   const weapon = r.pick(WEAPONS.filter((w) => w !== 'spawn'));
   const scale = r.range(0.6, 1.8);
-  const g = {
-    id: id || ('GEN' + seed), family, move, weapon,
-    hp: undefined, speed: undefined,
-    w: { dmg: undefined, rate: undefined, range: undefined },
-    traits: [], tags: ['generated'],
-  };
+  const g = { id: id || ('GEN' + seed), family, move, weapon, w: {}, traits: [], tags: ['generated'] };
   const base = { orb: 20, square: 140, tri: 45, hex: 110, ring: 80, diamond: 35 }[family];
   g.hp = Math.max(6, Math.round(base * scale * r.range(0.7, 1.4)));
   g.speed = Math.round({ orb: 220, square: 90, tri: 260, hex: 70, ring: 120, diamond: 300 }[family] * r.range(0.7, 1.35));

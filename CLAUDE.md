@@ -14,7 +14,7 @@ judgment; only his word makes law; proof is his game; the warm room is the treas
 `PLAN.md` — the plan, the architecture, the grammar, the wire, the roadmap, the questions, the board ·
 `index.html` + `src/` — the game (plain ES modules, no build) · `src/sim/` — the pure world ·
 `src/ai/bot.js` — the captain · `src/render/` — the light · `src/ui/` — the hand, the glass, the wire's
-page end · `tools/headless.js` — the war without a screen · `tools/relay.js` — the wire · `tools/serve.js`
+page end · `tools/headless.js` — the war without a screen · `tools/duel.js` — THE JUDGE (the counter table and the role prices) · `tools/trace.js` — one duel told second by second · `tools/mirror.js` — the same deck both sides, for a fair field · `tools/relay.js` — the wire · `tools/serve.js`
 — the house on :8897 · `probes/vector-road.cjs` — the road by real taps (Chromium; Playwright from
 ../trax-arena/node_modules).
 
@@ -26,4 +26,6 @@ frames in probes/shots viewed · commit by pathspec (never probes/shots) · `bas
 (this repo IS the Pages site; the script is the one push form the desk allows) · the live page probed with `VECTOR_URL=https://trax-cmd.github.io/trax-vector/index.html`.
 
 A minor change (a number, a word, a colour) is patched, probed once, committed, pushed. A change to the
-sim's rules re-runs headless and the probe on both glasses.
+sim's rules re-runs headless and the probe on both glasses. A change to a body or a weapon re-runs the judge
+(`node tools/duel.js --reps 2 --passes 3`) and bakes what it measured into library.js (BEATS, ROLE_PRICE):
+the cards print only what the judge saw.

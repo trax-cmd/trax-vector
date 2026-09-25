@@ -10,6 +10,7 @@ const TEAM = [
   { orb: [1.0, 0.52, 0.3], square: [1.0, 0.32, 0.42], tri: [1.0, 0.72, 0.3], hex: [1.0, 0.42, 0.62], ring: [1.0, 0.62, 0.52], diamond: [1.0, 0.88, 0.55], base: [1.0, 0.42, 0.32], flash: [1.0, 0.9, 0.8] },
 ];
 export function colorOf(team, family) { return TEAM[team][family] || TEAM[team].base; }
+export const NEUTRAL = [0.5, 0.55, 0.62];
 const ARC = [[0.75, 0.9, 1.0], [1.0, 0.85, 0.7]];
 
 export function createVfx(kinds) {
@@ -53,6 +54,8 @@ export function createVfx(kinds) {
         case 'explode': ring(e.x, e.y, 6, e.r * 1.35, 0.4, c, 2.6); flash(e.x, e.y, e.r * 0.8, 0.16, TEAM[e.team].flash); spark(e.x, e.y, c, 220 + e.r * 2, 0.6, 2.6, 14 + (e.r / 6 | 0)); break;
         case 'blink': ring(e.x, e.y, 4, 26, 0.22, c); ring(e.x2, e.y2, 26, 6, 0.22, c); seg(e.x, e.y, e.x2, e.y2, 3, c, 0.5, 0.14); break;
         case 'deploy': ring(e.x, e.y, 6, 40, 0.3, c); spark(e.x, e.y, c, 80, 0.4, 2, 5); break;
+        case 'muster': { const b = TEAM[e.team].base; ring(e.x, e.y, 10, 90 + e.n * 6, 0.5, b, 1.4); spark(e.x, e.y, b, 120, 0.5, 2.2, 8 + e.n); break; }
+        case 'capture': { const b = TEAM[e.team].base; ring(e.x, e.y, 20, 160, 0.7, b, 2); ring(e.x, e.y, 10, 90, 0.4, TEAM[e.team].flash, 2); spark(e.x, e.y, b, 160, 0.6, 2.4, 24); break; }
         case 'shot': break;
         case 'mine': ring(e.x, e.y, 4, 16, 0.3, c); break;
         case 'spawnout': spark(e.x, e.y, c, 100, 0.3, 2, 4); break;
