@@ -1,0 +1,12 @@
+{
+  "name": "trax-vector",
+  "version": "0.1.0",
+  "description": "TRAX: VECTOR - a top-down war of shapes and light, built to be played by people and by code",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "serve": "node tools/serve.js",
+    "headless": "node tools/headless.js",
+    "relay": "node tools/relay.js"
+  }
+}
