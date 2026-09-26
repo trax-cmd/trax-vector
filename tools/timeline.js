@@ -5,12 +5,12 @@
 // seconds, the stalls, the end and its reason - and judged against the line:
 //   first death ≤ 15 s in 8/8 · first contest ≤ 20 s 8/8 · first front move ≤ 30 s 8/8 · first gate hit ≤ 150 s 8/8 ·
 //   surge full on both sides before the first gate hit ≥ 6/8 and fired by both 8/8 · a shatter ≥ 6/8 ·
-//   no quiet gap > 8 s after 20 s · 0 stalls · a match past 240 s ≥ 6/8 · replay byte-equal
+//   no quiet gap > 8 s after 20 s · 0 stalls · a match past 150 s ≥ 6/8 · replay byte-equal
 // plus §11.1's asserts, every tick: no body outside its band while in the run; a dead gate's five points belong
 // to the breaker the same tick; the doom lands within far/1500 + 2.5 s of the last fall (8.57 s from the farthest
 // keep) with why 'strongholds'; the captain's opening puts one battalion in each lane at tick 1. A stall is the
 // spec's: a battalion whose centroid moves under 20 wu in 5 s with no target and no hold in force (IDLE counts).
-// Any miss is a red line and exit 1.
+// Any miss is a red line and exit 1. THE WAR rides beside the line, told and never judged: the balance is his to rule on (see war()).
 // THE LEVER (§5.1): SURGE_PER_ENERGY is the one number this tool moves. The default run judges the line at the sim's own; when the
 // coached line's 'surge full on both sides before the first gate hit' row misses, THE WALK 3.5 → 6 plays the coached matches at
 // every other value - each cut at the first gate hit, where that row is decided - and the first value that holds it in six of eight
@@ -31,6 +31,10 @@ const LEVERS = [3.5, 4, 4.5, 5, 5.5, 6];   // the surge lever's walk (§5.1)
 const GATE_HIT_S = 150;                    // the line's limit on the first gate hit: a walk match past it has missed its own row
 const STALL_S = 5, STALL_WU = 20;          // a stall: a battalion's centroid moving under 20 wu over 5 s with no target and no hold in force
 const QUIET_FROM = 20, DOOM_TAIL = 2.5, DOOM_V = 1500;
+const WAR_FROM = 60, ROUT = 4;             // THE WAR: the opening is over by 60 s; a side fielding 4x the other's energy is a rout
+// the sim plays a doom begun before the bell past it, so a watched match may run on after the clock by the longest doom there is -
+// its wave crossing the whole field's diagonal, then its tail - and two ticks of slack; bounded, so no match can run forever
+const DOOM_PAST_BELL = Math.ceil((Math.hypot(W, H) / DOOM_V + DOOM_TAIL) / TICK) + 2;
 
 // THE LINE: each row is a claim on one match and the share of the seeds it must hold in (1 = every seed, 0.75 = six of eight)
 const LINE = [
@@ -43,7 +47,12 @@ const LINE = [
   ['a shatter', (r) => r.firstShatter < Infinity, 0.75],
   ['no quiet gap > 8 s after 20 s', (r) => r.longestQuiet <= 8, 1],
   ['0 stalls', (r) => r.stalls === 0, 1],
-  ['a match past 240 s', (r) => r.time > 240, 0.75],
+  /* THE LENGTH ROW (the designer's ruling 2026-09-25, round four). It read 'past 240 s' and the greens came from keeps small arms could
+     not hurt: a decided war circled a keep whose arc did not move for two and a half minutes (the player critic, round two). With the
+     open keeps (sim.js keepOpen) a decided war ends 30-60 s after its last gate, and matches run 164-475 s (coached 174-356). 150 s is
+     where a match has had its opening, a breach and a siege. That wars are decided early - the loser out-killed 2-4x by 45 s in half
+     the captains' seeds - is the next version's design work (a comeback), measured by the kills column, not hidden by a frozen wall. */
+  ['a match past 150 s', (r) => r.time > 150, 0.75],
   ["the captain's opening: one battalion in each lane at tick 1", (r) => r.openingOk, 1],
   ['no body outside its band in the run', (r) => r.breaches === 0, 1],
   ["a gate's death flips its five points to the breaker the same tick", (r) => r.flipBad === 0, 1],
@@ -63,6 +72,7 @@ function fresh(seed, mode) {
     surgeFull: [Infinity, Infinity], surgeFired: [Infinity, Infinity], longestQuiet: 0, quietEnd: 0, quietState: '', stalls: 0, stallS: 0, stallBy: [0, 0, 0, 0, 0, 0], stallFirst: null,
     opening: [new Set(), new Set()], openingOk: false, breaches: 0, breachFirst: null, flips: 0, flipBad: 0,
     lastFall: null, doomAt: Infinity, doomOk: true, doomLag: null, result: null, time: 0, ticks: 0, ms: 0, kills: [0, 0], peak: 0,
+    war: { samples: 0, rout: [0, 0], both: 0, bothLate: 0 },
   };
 }
 const standing = (sim, team) => { for (let t = 0; t < sim.T.n; t++) if (sim.T.team[t] === team && sim.T.alive[t]) return true; return false; };
@@ -112,40 +122,69 @@ function clampAssert(sim, r) {
     if (!r.breachFirst) r.breachFirst = { i, kind: sim.kinds[U.kind[i]].id, x: Math.round(U.x[i]), y: Math.round(U.y[i]), lane: U.lane[i], time: +sim.time.toFixed(1) };
   }
 }
-// the stall watch, once a second: per battalion (grp) the centroid and whether it is idle - no body with a target, none holding a
-// point (stage 1, the one hold in force), none stunned. A body at stage 5 IDLE (nothing left to reach) is idle too: the spec's stall
-// is 'no target and no hold in force', and a battalion standing at a dead keep while the enemy's other gates live is exactly the
-// stalemate the line must catch. Six idle samples with the centroid under 20 wu from first to last make the battalion a stall: it is
-// counted once (r.stalls is battalions, not episodes, so a 480 s stalemate does not swamp a 5 s one), tallied by its stage, and every
-// further idle 5 s adds to r.stallS, the idle time. Once the doom runs nothing is a stall: the war is decided, the loser is dying and
-// the winner has nothing left to reach.
+// the stall watch, once a second: per battalion (grp) where each living member stands and whether the battalion is idle - no body
+// with a target, none holding a point (stage 1, the one hold in force), none stunned. A body at stage 5 IDLE (nothing left to reach)
+// is idle too: the spec's stall is 'no target and no hold in force', and a battalion standing at a dead keep while the enemy's other
+// gates live is exactly the stalemate the line must catch. Six idle samples whose members marched under 20 wu from first to last
+// make the battalion a stall: it is counted once (r.stalls is battalions, not episodes, so a 480 s stalemate does not swamp a 5 s
+// one), tallied by its stage, and every further idle 5 s adds to r.stallS, the idle time. Once the doom runs nothing is a stall: the
+// war is decided, the loser is dying and the winner has nothing left to reach.
 function stallSample(sim, r, memory) {
   if (sim.S.doom) { memory.clear(); return; }
   const U = sim.U, seen = new Map();
   for (let i = 0; i < U.hi; i++) {
     if (!U.alive[i] || U.grp[i] === 0) continue;
-    const g = seen.get(U.grp[i]) || { sx: 0, sy: 0, n: 0, idle: true, i, stages: [0, 0, 0, 0, 0, 0] };
-    g.sx += U.x[i]; g.sy += U.y[i]; g.n++; g.stages[U.stage[i]]++;
+    const g = seen.get(U.grp[i]) || { at: new Map(), idle: true, i, stages: [0, 0, 0, 0, 0, 0] };
+    g.at.set(i, [U.x[i], U.y[i]]); g.stages[U.stage[i]]++;
     if (U.target[i] !== -1 || U.stage[i] === 1 || U.stun[i] > 0) g.idle = false;
     seen.set(U.grp[i], g);
   }
   for (const grp of memory.keys()) if (!seen.has(grp)) memory.delete(grp);
   for (const [grp, g] of seen) {
-    const h = memory.get(grp) || { xs: [], ys: [], idle: [] };
-    h.xs.push(g.sx / g.n); h.ys.push(g.sy / g.n); h.idle.push(g.idle);
-    if (h.xs.length > STALL_S + 1) { h.xs.shift(); h.ys.shift(); h.idle.shift(); }
-    if (h.xs.length === STALL_S + 1 && h.idle.every(Boolean) && Math.hypot(h.xs[STALL_S] - h.xs[0], h.ys[STALL_S] - h.ys[0]) < STALL_WU) {
+    const h = memory.get(grp) || { at: [], idle: [] };
+    h.at.push(g.at); h.idle.push(g.idle);
+    if (h.at.length > STALL_S + 1) { h.at.shift(); h.idle.shift(); }
+    if (h.at.length === STALL_S + 1 && h.idle.every(Boolean) && march(h.at[0], h.at[STALL_S]) < STALL_WU) {
       r.stallS += STALL_S;
       if (!h.stalled) {
         const stage = g.stages.indexOf(Math.max(...g.stages));   // the stage most of the battalion stands in
+        const [x, y] = centroid(g.at, g.at);
         h.stalled = true; r.stalls++; r.stallBy[stage]++;
-        if (!r.stallFirst) r.stallFirst = { grp, kind: sim.kinds[U.kind[g.i]].id, team: U.team[g.i], lane: U.lane[g.i], stages: g.stages.join('.'), x: Math.round(h.xs[STALL_S]), y: Math.round(h.ys[STALL_S]), time: +sim.time.toFixed(0) };
+        if (!r.stallFirst) r.stallFirst = { grp, kind: sim.kinds[U.kind[g.i]].id, team: U.team[g.i], lane: U.lane[g.i], stages: g.stages.join('.'), x: Math.round(x), y: Math.round(y), time: +sim.time.toFixed(0) };
       }
-      h.xs.length = 0; h.ys.length = 0; h.idle.length = 0;
+      h.at.length = 0; h.idle.length = 0;
     }
     memory.set(grp, h);
   }
 }
+// how far a battalion marched between two samples: the centroid of the members alive at BOTH, then and now. A centroid over whoever
+// is alive at each end moves when bodies die, not when the battalion does - seed 8's BLOOM LINE lost its eight MOTEs far ahead of its
+// seven BLOOMs, the centroid fell back 620 wu and the BLOOMs' 1,200-wu march read as 16 wu, a false stall. No member alive at both
+// ends (the whole battalion turned over in 5 s: a fight, not a stall) reads as a march without end.
+function march(then, now) {
+  const [x0, y0, n] = centroid(then, now), [x1, y1] = centroid(now, then);
+  return n ? Math.hypot(x1 - x0, y1 - y0) : Infinity;
+}
+// the centroid of the positions in `at` whose body is also in `also`, and how many there were
+function centroid(at, also) {
+  let sx = 0, sy = 0, n = 0;
+  for (const [i, [x, y]] of at) if (also.has(i)) { sx += x; sy += y; n++; }
+  return [sx / Math.max(1, n), sy / Math.max(1, n), n];
+}
+// THE WAR, once a second: the energy each side fields (the cost of every living body), the most both field at once - over the
+// match and after the opening - and the seconds one side fields ROUT times the other's, by the side ahead. The line reads moments;
+// this reads the balance: a match can hold every row while one side stands alone on the field for most of it (the critic's
+// round three: in six of eight captains' seeds a 4x rout held for 61-84 % of the match)
+function warSample(sim, r) {
+  const U = sim.U, field = [0, 0], w = r.war;
+  for (let i = 0; i < U.hi; i++) if (U.alive[i]) field[U.team[i]] += sim.kinds[U.kind[i]].cost;
+  const lo = Math.min(field[0], field[1]), hi = Math.max(field[0], field[1]);
+  w.samples++;
+  w.both = Math.max(w.both, lo);
+  if (sim.time > WAR_FROM) w.bothLate = Math.max(w.bothLate, lo);
+  if (hi > 0 && hi >= ROUT * lo) w.rout[field[0] > field[1] ? 0 : 1]++;
+}
+const routShare = (r) => (r.war.rout[0] + r.war.rout[1]) / Math.max(1, r.war.samples);
 // the doom: the same tick as the last fall, and the result why 'strongholds' within far/1500 + 2.5 s of it
 function judgeDoom(sim, r) {
   if (!r.lastFall) return;
@@ -158,15 +197,17 @@ function judgeOpening(r) {
   const captains = r.mode === 'bots' ? [0, 1] : [1];
   r.openingOk = captains.every((team) => r.opening[team].size === 3);
 }
+// a match still to be watched at tick t: the clock runs, or a doom is under way and its bounded tail has not run out
+const inPlay = (sim, t) => t < CLOCK_TICKS || (!!sim.S.doom && t < CLOCK_TICKS + DOOM_PAST_BELL);
 // a match to its end - or, with a cut, to the tick the cut names (the walk stops at the first gate hit: its row is decided there)
 function run(seed, mode, surgePerEnergy, twin, cut = null) {
   const sim = createSim(simOpts(seed, surgePerEnergy)), r = fresh(seed, mode), memory = new Map();
   const side = bots(sim, mode, seed), t0 = performance.now();
-  for (let t = 0; t < CLOCK_TICKS && !sim.result && !(cut && cut(r, sim)); t++) {
+  for (let t = 0; inPlay(sim, t) && !sim.result && !(cut && cut(r, sim)); t++) {
     for (const b of side) b.tick();
     sim.step();
     moments(sim, r); clampAssert(sim, r);
-    if (sim.tick % 30 === 0) stallSample(sim, r, memory);
+    if (sim.tick % 30 === 0) { stallSample(sim, r, memory); warSample(sim, r); }
     r.peak = Math.max(r.peak, sim.U.count[0] + sim.U.count[1]);
     if (twin) twin.step(sim);
   }
@@ -195,6 +236,8 @@ const s = (v) => (v === Infinity ? '—' : v.toFixed(1));
 const endOf = (r) => (r.result ? `${r.result.winner < 0 ? 'a draw' : r.result.winner === 0 ? 'west' : 'east'} by ${r.result.why} at ${r.result.time.toFixed(0)} s` : `no result at ${r.time.toFixed(0)} s`);
 function tell(r) {
   console.log(`seed ${String(r.seed).padStart(2)} ${r.mode.padEnd(7)} · death ${s(r.firstDeath)} · contest ${s(r.firstContest)} · front ${s(r.firstFront)} · gate hit ${s(r.firstGateHit)} · full ${s(r.surgeFull[0])}/${s(r.surgeFull[1])} · fired ${s(r.surgeFired[0])}/${s(r.surgeFired[1])} · shatter ${s(r.firstShatter)} · quiet ${r.longestQuiet.toFixed(1)} · stalls ${r.stalls} · ${endOf(r)} · kills ${r.kills.join('/')} · peak ${r.peak} · ${r.ticks} ticks ${(r.ms / 1000).toFixed(1)} s`);
+  const w = r.war, pct = (n) => `${Math.round((100 * n) / Math.max(1, w.samples))} %`;
+  console.log(`   THE WAR · most energy both sides field at once ${Math.round(w.both)} (after ${WAR_FROM} s: ${Math.round(w.bothLate)}) · one side ≥ ${ROUT}× the other for ${pct(w.rout[0] + w.rout[1])} of the match (west ahead ${pct(w.rout[0])}, east ahead ${pct(w.rout[1])})`);
   if (r.longestQuiet > 8) console.log(`   QUIET ${r.longestQuiet.toFixed(1)} s without a hit · from ${(r.quietEnd - r.longestQuiet).toFixed(0)} s to ${r.quietEnd.toFixed(0)} s · ${r.quietState || ''}`);
   if (r.breachFirst) console.log(`   BREACH ${r.breaches}× · first ${JSON.stringify(r.breachFirst)}`);
   if (r.stallFirst) console.log(`   STALL ${r.stalls} battalion(s) stood idle ≥ 5 s (${r.stallS} battalion-seconds) · by stage MARCH.HOLD.ADVANCE.GATE.KEEP.IDLE ${r.stallBy.join('.')} · first ${JSON.stringify(r.stallFirst)}`);
@@ -211,8 +254,17 @@ function judge(records, label, replay) {
     if (!ok) red++;
     console.log(`  ${ok ? 'ok ' : 'RED'} ${name.padEnd(64)} ${n}/${records.length} need ${need}`);
   }
+  warSummary(records);
   if (replay) { const ok = replay.diverged < 0 && replay.equal; if (!ok) red++; console.log(`  ${ok ? 'ok ' : 'RED'} ${'replay byte-equal (seed ' + replay.seed + ')'.padEnd(64)} ${ok ? 'tick-equal, snapshots equal' : replay.diverged >= 0 ? 'diverged at tick ' + replay.diverged : 'snapshots differ'}`); }
   return red;
+}
+
+// THE WAR over a mode's records, told beside the line and never counted red: how many seeds a rout held for most of the match, the
+// spread of its share, and the spread of the most both sides fielded at once after the opening
+function warSummary(records) {
+  const shares = records.map(routShare), late = records.map((r) => Math.round(r.war.bothLate)), span = (a, f) => `${f(Math.min(...a))}-${f(Math.max(...a))}`;
+  const pct = (v) => `${Math.round(100 * v)} %`, most = shares.filter((v) => v > 0.5).length;
+  console.log(`  war THE WAR (told, not judged) · a ${ROUT}× rout for most of the match in ${most}/${records.length} · rout share ${span(shares, pct)} · most both field at once after ${WAR_FROM} s ${span(late, String)}`);
 }
 
 // the whole line at one lever value (undefined = the sim's own): every mode asked for, the first seed of each replayed beside itself

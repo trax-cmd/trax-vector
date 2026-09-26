@@ -5,7 +5,7 @@
 // tempers were measured against. The lane readers below are shared with the captain (bot.js): both sides
 // read the field with the same eyes, and the only difference is who is asked to act.
 // It reads nothing but the snapshot (§3.8) and the till: sim.price(b).
-import { ROLES, ROLE_GLYPH, LOSES } from '../sim/library.js';
+import { ROLES, ROLE_GLYPH, LOSES, GATE_BREAKER } from '../sim/library.js';
 import { GATE_X, KEEP_X, CP_X, CENTRE, slotsToward, laneWord, pointName } from '../sim/lanes.js';
 
 export const VERBS = ['DEFEND', 'ALARM', 'SURGE', 'BREAK', 'TAKE', 'PUSH'];
@@ -24,6 +24,7 @@ const total = (a) => a[0] + a[1] + a[2] + a[3] + a[4] + a[5];
 const glyph = (q) => ROLE_GLYPH[q];
 const glyphs = (qs) => qs.map(glyph).join(' ');
 const KEEP = 1;   // T.kind: 0 a gate, 1 a keep (§3.2)
+const SIEGE_WHY = ['siege breaks gates', 'siege breaks keeps'];   // the reason when the glowing card is the gate breaker: a gate standing, a gate dead
 
 // the role with the most energy in a fielded row, −1 when the row is empty
 export function topRole(fielded) {
@@ -42,6 +43,8 @@ export function waveTop(roles) {
 
 // a side's living keeps, counted off the snapshot's strongholds
 const keepsAlive = (snap, team) => snap.towers.reduce((n, t) => n + (t.team === team && t.kind === KEEP && t.alive ? 1 : 0), 0);
+// a side with no stronghold standing: its last one fell, the sim set the doom on it and takes no more of its orders (§5.3)
+const fallen = (snap, team) => !snap.towers.some((t) => t.team === team && t.alive);
 
 // one lane as a side reads it: who fields what, where the fronts stand, what the next point is, whether an order
 // can even be mustered there and whether there is anything left to break at its far end
@@ -65,6 +68,7 @@ export function readLane(snap, team, l, keeps = [keepsAlive(snap, 0), keepsAlive
     top: topRole(L.fielded[them]), ownTop: topRole(L.fielded[team]),
     ownFront, enemyFront, depth, hitAgo,
     weak: depth < WEAK_DEPTH || hitAgo < HIT_AGO,
+    outnumbered: enemy > own,
     // THE WALK-IN: they field a battalion in a lane he fields nothing in - nothing stands between it and his gate, whatever the
     // front reads (the front moves only as points fall, four of five before the depth test wakes); the coach alone reads this
     walkIn: enemy > 0 && own === 0,
@@ -86,8 +90,14 @@ export function readLanes(snap, team) {
   return lanes;
 }
 
-// how urgent a weak lane is: a gate under fire first, then the shallowest enemy front
-export const urgency = (L) => (L.hitAgo < HIT_AGO ? 0 : L.depth);
+// the order threatened lanes are answered in: a gate under fire first, then a lane where they out-field him, then the
+// shallowest enemy front, then the heaviest column. THE OUT-FIELDED RANK IS ADDED ON THE MEASURE: the front moves only as
+// points fall, so after the column that pushed it dies or walks on, the depth test still reads 'at his gate' over a lane
+// only his own bodies walk. Ranked by depth alone, that lane drew DEFEND (and the captain's defence) for 15 s at a time
+// while their real column walked another lane unmet - the timeline's quiet gaps of 8.3-10.8 s (seeds 1 and 3 coached, 6
+// captains). A column walking a lane he left empty is now answered before a door his bodies already hold.
+const alarmRank = (L) => (L.hitAgo < HIT_AGO ? 0 : L.outnumbered ? 1 : 2);
+export const byUrgency = (a, b) => alarmRank(a) - alarmRank(b) || a.depth - b.depth || b.enemy - a.enemy || a.lane - b.lane;
 
 // the lane a full meter should be dragged onto, −1 when there is none: the hammer over the anvil (§6.3 rule 3, §8 rule 4)
 export function surgeLane(snap, team, lanes) {
@@ -96,31 +106,45 @@ export function surgeLane(snap, team, lanes) {
   return fit.length ? fit.reduce((a, b) => (b.own > a.own ? b : a)).lane : -1;
 }
 
-// the card to tap: the cheapest affordable answer; with none, the dearest affordable (a body in the lane
-// beats no body, and a person taps the big card); −1 when nothing is affordable and the tap waits
-export function pickCard(sim, deck, answers, budget) {
-  let cheap = -1, cheapest = Infinity, dear = -1, dearest = -1;
+// the card to tap: with a stronghold to break (breaker) the cheapest affordable GATE_BREAKER first - its shots land whole
+// on a gate or a keep where every other card's are turned by THE WALL (sim.js) - else the cheapest affordable answer;
+// with none, the dearest affordable (a body in the lane beats no body, and a person taps the big card); −1 when nothing
+// is affordable and the tap waits
+export function pickCard(sim, deck, answers, budget, breaker = false) {
+  let siege = -1, siegeCheapest = Infinity, cheap = -1, cheapest = Infinity, dear = -1, dearest = -1;
   deck.forEach((b, i) => {
     const p = sim.price(b);
     if (p > budget) return;
+    if (breaker && b.role === GATE_BREAKER && p < siegeCheapest) { siege = i; siegeCheapest = p; }
     if (answers.includes(b.role) && p < cheapest) { cheap = i; cheapest = p; }
     if (p > dearest) { dear = i; dearest = p; }
   });
-  return cheap >= 0 ? cheap : dear;
+  return siege >= 0 ? siege : cheap >= 0 ? cheap : dear;
 }
 
 // the six rules of §6.3 in order, over the lanes an order can be mustered into; glass names the lanes (§1) and
 // defaults to his hand, the portrait
 export function advise(sim, team, snap, glass = 'portrait') {
   if (!snap || snap.result) return null;
+  // THE DOOM DECIDES THE WAR (§5.3): once either side's last stronghold falls the coach is silent until the end card. The
+  // loser takes no order; the winner has nothing left to answer - a wave the loser announced will never muster, since its
+  // commands are refused, and an ALARM on it would glow over the shatter and THEIR LAST KEEP FALLS
+  if (fallen(snap, 0) || fallen(snap, 1)) return null;
   const them = 1 - team, deck = snap.decks[team], energy = snap.energy[team];
-  const lanes = readLanes(snap, team).filter((L) => L.musterable);
-  if (!lanes.length) return null;   // no stronghold of his stands: the doom is on him and no order is taken
+  const lanes = readLanes(snap, team).filter((L) => L.musterable);   // never empty here: a standing keep musters every lane, a gate its own
   const word = (l) => laneWord(glass, team, l);
   const on = (l) => (l === 1 ? 'in the ' : 'on the ') + word(l);
-  const say = (verb, L, x, top, why) => {
+  // THE REASON FITS ITS LINE. The banner's sub-line is one line cut with an ellipsis (§4.5: the battalion's line, then
+  // 'why this card: ' and this), so every reason stays under sixty characters and the long ones - PUSH, BREAK, ALARM - lead
+  // with the clause that says which card answers what, the place after it; DEFEND and SURGE keep §6.3's own words, which
+  // fit whole. THE GATE BREAKER: on BREAK, or a PUSH whose lane already stands at their gate, the siege card glows before
+  // the counters; when it does, its four words lead and the place follows
+  const say = (verb, L, x, top, why, place = why) => {
     const answers = top >= 0 ? LOSES[top] : [];
-    return { verb, lane: L.lane, x, role: top, answers, card: pickCard(sim, deck, answers, energy), why };
+    const breaker = (verb === 'BREAK' || verb === 'PUSH') && L.gateOpen && !L.finished;
+    const card = pickCard(sim, deck, answers, energy, breaker);
+    const siege = breaker && card >= 0 && deck[card].role === GATE_BREAKER;
+    return { verb, lane: L.lane, x, role: top, answers, breaker, card, why: siege ? `${SIEGE_WHY[+L.gateDead]} · ${place}` : why };
   };
   const bring = (L) => `they bring ${glyph(L.top)} ${ROLES[L.top]} ${on(L.lane)} and ${glyphs(LOSES[L.top])} beats it`;
   // THE OPENING: until his first battalion stands nothing of his is anywhere, and the coach's one word is PUSH CENTRE (§3.7)
@@ -137,9 +161,10 @@ export function advise(sim, team, snap, glass = 'portrait') {
   // the march walks it on; at the first point it captures on arrival and meets the column a point further out (measured: the row 7/8
   // at the doorstep and 8/8 at the point; the coached side's wins at NORMAL 2-6 at the doorstep and 3-5 at the point, the yardstick's
   // own reading before the walk-in).
-  const weak = lanes.filter((L) => L.weak || (!opening && L.walkIn)).sort((a, b) => urgency(a) - urgency(b) || b.enemy - a.enemy || a.lane - b.lane)[0];
+  const weak = lanes.filter((L) => L.weak || (!opening && L.walkIn)).sort(byUrgency)[0];
   if (weak) {
-    const why = weak.top < 0 ? `they are at your gate ${on(weak.lane)}` : weak.weak ? bring(weak) : `${glyph(weak.top)} ${ROLES[weak.top]} walks the ${word(weak.lane)} unmet and ${glyphs(LOSES[weak.top])} beats it`;
+    const empty = weak.hitAgo < HIT_AGO ? `they are at your gate ${on(weak.lane)}` : `the front is back at your gate ${on(weak.lane)}`;   // no body of theirs in the lane
+    const why = weak.top < 0 ? empty : weak.weak ? bring(weak) : `${glyph(weak.top)} ${ROLES[weak.top]} walks the ${word(weak.lane)} unmet and ${glyphs(LOSES[weak.top])} beats it`;
     return say('DEFEND', weak, weak.weak ? weak.ownFront : weak.nextX, weak.top, why);
   }
 
@@ -148,7 +173,7 @@ export function advise(sim, team, snap, glass = 'portrait') {
   const wave = snap.wave[them], alarm = wave && lanes.find((L) => L.lane === wave.lane);
   if (alarm) {
     const top = waveTop(wave.roles);
-    return say('ALARM', alarm, alarm.ownFront, top, `${wave.name} comes ${on(alarm.lane)} · ${glyphs(LOSES[top])} answers ${glyph(top)}`);
+    return say('ALARM', alarm, alarm.ownFront, top, `${glyphs(LOSES[top])} answers ${glyph(top)} · ${wave.name} comes ${on(alarm.lane)}`);
   }
 
   // 3. SURGE: the meter is full and a lane holds his hammer over their anvil
@@ -161,10 +186,9 @@ export function advise(sim, team, snap, glass = 'portrait') {
   // 4. BREAK: a lane whose next point is their gate or, the gate dead, their keeps - the one where he fields the most
   const open = lanes.filter((L) => L.gateOpen && !L.finished).sort((a, b) => b.own - a.own)[0];
   if (open) {
-    const why = open.gateDead ? `their gate ${on(open.lane)} is open · the keeps are next`
-      : open.top >= 0 ? `their gate ${on(open.lane)} stands alone · ${glyphs(LOSES[open.top])} beats what guards it`
-      : `their gate ${on(open.lane)} stands alone`;
-    return say('BREAK', open, open.nextX, open.top, why);
+    const place = `their ${word(open.lane)} gate ${open.gateDead ? 'is open' : 'stands alone'}`;
+    const why = open.gateDead ? `${place} · the keeps are next` : open.top >= 0 ? `${glyphs(LOSES[open.top])} beats what guards it · ${place}` : place;
+    return say('BREAK', open, open.nextX, open.top, why, place);
   }
 
   // 5. TAKE: a centre that is the next point and not his, the least defended first
@@ -181,7 +205,7 @@ export function advise(sim, team, snap, glass = 'portrait') {
   const push = (opening && ranked.find((L) => L.lane === 1 && !L.finished)) || ranked[0];
   // the next point by name; with all five held (only a finished lane reaches here) the far end itself
   const point = push.nextSlot >= 0 ? pointName(glass, team, push.lane, push.nextSlot) : `${word(push.lane)} · THEIR ${push.gateDead ? 'KEEPS' : 'GATE'}`;
-  const step = opening ? `the centre pays 12/s · ${point} is the first step` : `${point} is the next step`;
-  const why = push.top >= 0 ? `${step} · ${glyphs(LOSES[push.top])} beats their ${glyph(push.top)}` : step;
-  return say('PUSH', push, push.nextX, push.top, why);
+  const step = opening ? 'the centre pays 12/s' : `${point} is the next step`;   // at the bell the tap's chip names the point
+  const why = push.top >= 0 ? `${glyphs(LOSES[push.top])} beats their ${glyph(push.top)} · ${step}` : step;
+  return say('PUSH', push, push.nextX, push.top, why, step);
 }

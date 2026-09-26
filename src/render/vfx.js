@@ -142,7 +142,8 @@ export function createVfx(kinds, sim) {
         case 'capture': ring(e.x, e.y, CP_R, CP_R * 1.8, 0.4, c, 1, px(2)); if (e.centre) ring(e.x, e.y, CP_R * 1.3, CP_R * 2.4, 0.6, GOLD, 0.8, px(2)); break;
         case 'mine': ring(e.x, e.y, 4, 16, 0.3, c, 0.7, px(1)); break;
         case 'spawnout': emit(e.x, e.y, c, 3, 100, 0.3, 1, 0); break;
-        case 'towerHit': emit(e.x, e.y, c, 3, 160, 0.3, 1, 0); break;
+        // towerHit has no light of its own (§2.6): the shot already sparks where it bites the rim and the hp arc drains; a
+        // siege lands hundreds of hits a second, and sparks at the centre for each piled a glowing ball into the core
         case 'barrel': if (e.i >= 0 && e.i < BODIES) { barrel.until[e.i] = now + 0.12; barrel.x2[e.i] = e.x2; barrel.y2[e.i] = e.y2; } break;
         case 'shatter': shatter(e); break;
         case 'laneBreak': laneBreak(e); break;
@@ -227,26 +228,39 @@ export function createVfx(kinds, sim) {
 
   // ---- §2.5 THE TRAIL: four snapshots of every body's position 30 ms apart; the tail is the oldest, ~120 ms back
   const TX = new Float32Array(BODIES * SLOTS), TY = new Float32Array(BODIES * SLOTS);
-  let head = 0, snapAt = -Infinity, snaps = 0;
+  // each slot's age at the last snap: a body younger now than then is a new body in a recycled slot (a dead slot reads
+  // Infinity, so whatever lives there next is new; at boot every slot is)
+  const snapAge = new Float32Array(BODIES).fill(Infinity);
+  let head = 0, snapAt = -Infinity;
+  // a body born since the last snap owns every slot of its ring: the tail must never reach back to the slot's last occupant
+  // (or to the world origin at boot) - a muster otherwise drew a thread from each new body across the field
+  function seat(i, x, y) { for (let s = 0; s < SLOTS; s++) { TX[s * BODIES + i] = x; TY[s * BODIES + i] = y; } }
   const trail = {
     // now: performance.now() milliseconds, the clock main.js keeps (a caller without one gets the vfx clock). On the wall
     // clock a tail is the last 120 ms a person watched, so slow-time shortens it as it shortens every stride.
     snap(U, now = clock * 1000) {
       if (now - snapAt < SNAP_MS) return;
-      snapAt = now; head = (head + 1) % SLOTS; snaps++;
+      snapAt = now; head = (head + 1) % SLOTS;
       const n = Math.min(U.hi, BODIES);
       TX.set(U.x.subarray(0, n), head * BODIES); TY.set(U.y.subarray(0, n), head * BODIES);
+      for (let i = 0; i < n; i++) {
+        if (!U.alive[i]) { snapAge[i] = Infinity; continue; }
+        // younger than at the last snap: a new body. Under TAIL_S it is re-seated every snap as well, so the tail it grows
+        // into is its own path even when a slot dies and is reborn inside one snap by two lives that young
+        if (U.age[i] < snapAge[i] || U.age[i] < TAIL_S) seat(i, U.x[i], U.y[i]);
+        snapAge[i] = U.age[i];
+      }
     },
-    // light bodies at speed leave a 1 css px thread of their edge, 0.35 at the head to 0 at the tail; OVERDRIVE (surging) three times as long
+    // light bodies at speed leave a 1 css px thread of their edge, 0.35 at the head to 0 at the tail; a surging orb (OVERDRIVE,
+    // the one super that names the trail) three times as long
     fill(out, U, zoom, surging) {
-      if (snaps < SLOTS) return;
       const isSurging = typeof surging === 'function' ? surging : surging && surging.length ? (i) => !!surging[i] : () => false;
       const tail = ((head + 1) % SLOTS) * BODIES, n = Math.min(U.hi, BODIES), now = nowS(), thread = 0.5 / zoom, barrelW = 0.75 / zoom;
       for (let i = 0; i < n; i++) {
         if (!U.alive[i]) continue;
         const k = kinds[U.kind[i]], c = edgeOf(U.team[i]);
         if (U.age[i] >= TAIL_S && (k.shape === 0 || k.shape === 2 || k.shape === 5) && k.speed >= 200) {
-          const hx = U.x[i], hy = U.y[i], m = isSurging(i) ? 3 : 1;
+          const hx = U.x[i], hy = U.y[i], m = k.shape === 0 && isSurging(i) ? 3 : 1;
           out.line(hx + (TX[tail + i] - hx) * m, hy + (TY[tail + i] - hy) * m, hx, hy, thread, c[0], c[1], c[2], 0, 0.35);
         }
         if (barrel.until[i] > now) {   // §2.5 the siege barrel: 1.5 px from the hex's centre, 0.9 r toward its target, 120 ms

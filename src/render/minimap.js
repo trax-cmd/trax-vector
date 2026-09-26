@@ -10,7 +10,7 @@
 import { W, H, LANE_Y, GATE_X, cp, laneOf, laneWord } from '../sim/lanes.js';
 import { PALETTE, BIT } from './paint.js';
 
-const { FILL, EDGE, NEUTRAL_FILL, NEUTRAL_EDGE, GOLD, BAND, MINI_GROUND } = PALETTE;
+const { FILL, EDGE, NEUTRAL_FILL, NEUTRAL_EDGE, GOLD, BAND_EDGE, MINI_GROUND } = PALETTE;
 // The rects of §1, derived from the viewport so a bigger glass keeps the same corner: the size per
 // glass, the gutter from the right edge, and what the map sits against (the hand below it on
 // portrait and desk, the surge band above it on landscape). The chrome heights are index.html's
@@ -21,15 +21,23 @@ export const LAYOUT = {
   desk: { w: 240, h: 133, gutter: 12, handH: 112, chromeH: 72 },
 };
 const GAP = 8;       // px between the map and the chrome it sits against
-const TINT = 0.12;   // the held segments: the band mixed this far toward the side's fill (§2.8)
+const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+// The bar's tone. §2.10 names the band's fill #0E1322, but on the map's #0C1020 ground that is a 2/255 step and
+// the lanes vanish wherever nobody holds them. On the field the band reads by its edges (#232C48, §2.8), so the
+// map's bar is drawn in that edge tone: the same band, seen from far enough that only its outline is left.
+const BAR_BASE = BAND_EDGE;
+// The held segments: the bar mixed toward the side's colour. A side's fill outside a body is what a halo is made of
+// (§2.4), and its edge greys out in the slate, so the tint aims halfway between the two. §2.8's 12 % reads across a
+// 400-px band; on a 3-px bar it takes 30 % before a held stretch is told from a free one at a glance.
+const TINT = 0.3;
+const SIDE = [0, 1].map((t) => mix(FILL[t], EDGE[t], 0.5));
 const BAR_PX = 3, TICK_PX = 7, CHEV_PX = 4, POINT_PX = 3, HOLD_PX = 5, HP_PX = 7, COACH_PX = 3;   // §2.10's sizes on the glass
 // Screen-right and screen-down as world directions, per rotation (§2.2): what "under the glyph" means on each glass.
 const screenRight = (rot) => (rot ? [0, -rot] : [1, 0]);
 const screenDown = (rot) => (rot ? [rot, 0] : [0, 1]);
-const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 // Lines blend additively (§2.4), so a bar that must read as an exact colour on the map's ground is drawn as the difference.
 const onGround = (c) => [Math.max(0, c[0] - MINI_GROUND[0]), Math.max(0, c[1] - MINI_GROUND[1]), Math.max(0, c[2] - MINI_GROUND[2])];
-const BAR = onGround(BAND), BAR_W = onGround(mix(BAND, FILL[0], TINT)), BAR_E = onGround(mix(BAND, FILL[1], TINT));
+const BAR = onGround(BAR_BASE), BAR_W = onGround(mix(BAR_BASE, SIDE[0], TINT)), BAR_E = onGround(mix(BAR_BASE, SIDE[1], TINT));
 
 // The chrome as it really is: an edge of an element by id, when a document holds one with a height.
 function domEdge(id, edge) {
@@ -86,7 +94,7 @@ export function createMinimap({ R, sim, state, el, glass, view: mainView = null 
     for (let l = 0; l < 3; l++) {
       const y = LANE_Y[l], [westTo, eastFrom] = tints(l), hw = px(BAR_PX / 2);
       bar(out, GATE_X[0], westTo, y, BAR_W, hw);
-      bar(out, westTo, eastFrom, y, BAR, hw);   // the gap stays dark
+      bar(out, westTo, eastFrom, y, BAR, hw);   // the free stretch between the held ones
       bar(out, eastFrom, GATE_X[1], y, BAR_E, hw);
     }
   }

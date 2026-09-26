@@ -3,7 +3,7 @@
 // LOSES in red - the strip (energy and its rate, the clock, the three lane arrows), the surge band, the
 // banner of the hold preview and the end card. The pointer machine is drag.js's; this file only paints
 // and answers. It reads the sim and main.js's state (§9.7) and writes nothing back to either.
-import { ROLES, ROLE_GLYPH, BEATS, LOSES, ROLE_JOB } from '../sim/library.js';
+import { ROLES, ROLE_GLYPH, BEATS, LOSES, ROLE_JOB, GATE_BREAKER } from '../sim/library.js';
 import { laneWord } from '../sim/lanes.js';
 
 const PRICE_MS = 500;                     // prices, arcs and waits re-read every 500 ms (§4.2)
@@ -15,22 +15,29 @@ const EDGE = ['#7FF3FF', '#FFB07A'];      // the side edge colours (§2.1), for 
 export function createHud(sim, state, R, glass) {
   const $ = (id) => document.getElementById(id);
   const hand = $('hand'), energyEl = $('energy'), clockEl = $('clock'), surgeEl = $('surge'), bannerEl = $('banner'), endEl = $('end');
-  const surgeBar = surgeEl.querySelector('.bar'), surgeTxt = surgeEl.querySelector('.txt');
+  const surgeTxt = surgeEl.querySelector('.txt');
   const laneEls = [...$('lanes').querySelectorAll('.lane')];
   const team = state.team, deck = sim.decks[team];
   const cards = [], faces = [];
 
   // ---- THE FACE (§4.2): four rows - icon + price, name, role job, beats | loses; CSS hides the role row on landscape
-  const glyphs = (roles) => roles.length ? roles.map((q) => `<i>${ROLE_GLYPH[q]}</i>`).join('') : '<i>—</i>';
+  const glyph = (q) => `<i>${ROLE_GLYPH[q]}</i>`;
+  const glyphs = (roles) => roles.length ? roles.map(glyph).join('') : '<i>—</i>';
+  // THE GATE BREAKER: the judge finds the siege shape beats no shape, yet its shots land whole on a stronghold where
+  // every other shot does a tenth (sim.js THE WALL). A dash would call it useless, so its green slot names its prey -
+  // GATES, after any shape it does beat - and its job line says the trade instead of the weapon.
+  const beatsSlot = (role) => role !== GATE_BREAKER ? glyphs(BEATS[role])
+    : BEATS[role].map(glyph).join('') + '<b class="gate">GATES</b>';
+  const job = (role) => role === GATE_BREAKER ? 'gate breaker' : ROLE_JOB[role];
   hand.innerHTML = '';
   deck.forEach((b, i) => {
     const c = document.createElement('div');
     c.className = 'card'; c.dataset.i = i; c.dataset.k = b.id;
     c.innerHTML = `<div class="top"><canvas class="ico" width="${ICON}" height="${ICON}"></canvas><span class="price"><i class="arc"></i><b class="p"></b><span class="wait"></span></span></div>`
       + `<div class="name"></div><div class="role"><i>${ROLE_GLYPH[b.role]}</i><span></span></div>`
-      + `<div class="vs"><span class="beats">${glyphs(BEATS[b.role])}</span><i class="bar"></i><span class="loses">${glyphs(LOSES[b.role])}</span></div><span class="tag">GO</span>`;
+      + `<div class="vs"><span class="beats">${beatsSlot(b.role)}</span><i class="bar"></i><span class="loses">${glyphs(LOSES[b.role])}</span></div><span class="tag">GO</span>`;
     c.querySelector('.name').textContent = b.id;
-    c.querySelector('.role span').textContent = ROLE_JOB[b.role];
+    c.querySelector('.role span').textContent = job(b.role);
     hand.appendChild(c); cards.push(c);
     faces.push({ ico: c.querySelector('.ico'), p: c.querySelector('.p'), arc: c.querySelector('.arc'), waitEl: c.querySelector('.wait'), ok: true, price: -1, wait: '' });
   });
@@ -117,14 +124,14 @@ export function createHud(sim, state, R, glass) {
   function setFollowed(lane) { explicit.follow = true; followed = lane; stripAt = -STRIP_MS; }
   function setCoachLane(lane) { explicit.coach = true; coachLane = lane == null ? -1 : lane; stripAt = -STRIP_MS; }
 
-  // ---- THE SURGE BAND (§4.6): the bar's width is the meter; at 100 it is gold and says so; the drain is CSS (400 ms)
+  // ---- THE SURGE BAND (§4.6): the bar's share of its track is the meter; at 100 it is gold and says so; the drain is CSS (400 ms)
   let surgePct = -1, surgeReady = false;
   function syncSurge() {
     const max = (sim.o && sim.o.surgeMax) || 10000, v = sim.S && sim.S.surge ? sim.S.surge[team] : 0;
     const pct = Math.max(0, Math.min(100, Math.floor(v / max * 100))), ready = v >= max;
     if (pct === surgePct && ready === surgeReady) return;
     surgePct = pct; surgeReady = ready;
-    surgeBar.style.width = pct + '%';
+    surgeEl.style.setProperty('--p', pct / 100);   // the fill's share of its track (index.html #surge .bar)
     surgeEl.classList.toggle('ready', ready);
     surgeTxt.textContent = ready ? 'SURGE READY · DRAG TO A LANE' : pct + '%';
   }

@@ -26,14 +26,17 @@
 // folds it into view.lanes[l].fxTeam / fxAmt at the 0.12 of §2.8 — one channel from here, one writer of the view.
 import { W, H, LANE_Y, RUN, GATE_X, KEEP_X, KEEP_Y, CP_X, CENTRE, CP_R, GATE_R, KEEP_R, DROP_MIN, DROP_MAX,
   laneOf, cp, gate, keep, towerLane, slotsToward, laneWord, pointName } from '../sim/lanes.js';
-import { ROLES, ROLE_GLYPH, BEATS, LOSES, ROLE_JOB, BATT_LINE } from '../sim/library.js';
+import { ROLES, ROLE_GLYPH, BEATS, LOSES, ROLE_JOB, BATT_LINE, GATE_BREAKER } from '../sim/library.js';
 
 // THE BUDGETS (§4.8), every one read back by the probe; the 80 ms lift is the .lift transition in index.html
 const PREVIEW_MS = 180, TAP_MS = 250, DRAG_PX = 12, HOVER_MS = 200;
 const LIGHT_IN_MS = 100, LIGHT_OUT_MS = 200, SLIDE_MS = 120, FLIGHT_MS = 220, CANCEL_MS = 150;
 const CHIP_MS = 1200, NUDGE_MS = 200, LINGER_MS = 800, COUNT_MS = 500, WAVE_MS = 6000;
 const HIT_PX = 44, PAN_PX = 40, PAN_PX_S = 600, MINI_GAP_PX = 8, LIFT_PX = 48, SURGE_R = 300;
-const WORD_PX = 22, CHIP_PX = 24;   // the lane word rides this far above (or, pushed off, below) the finger; the chip this far off its mark's ring, or off the finger with the word at a drop surface
+const WORD_PX = 22, CHIP_PX = 24;   // the lane word rides this far above (or, when that seat is taken, below) a mouse; the chip this far off the aim, or off the finger with the word at a drop surface
+const FINGER_PX = 28;               // a fingertip hides about this much glass either side of its point: a touch's lane word sits beyond it
+const CHIP_GAP_PX = 8;              // the chip stands this far off its mark's ring
+const RING_EDGE_PX = 2;             // half the snapped ring's 3 px stroke: a word keeps off the ring's outer edge, not its centre line
 const LABEL_GAP_PX = 4;             // a word keeps this clear of another label, of the plate's line and of its room's edges
 const LEAD_K = 0.25, FRAME_MS = 1000 / 60;   // the lead closes a quarter of the gap a frame at 60 fps: ≈ 200 ms, the re-follow's lerp (§2.2)
 const RING_GAP_PX = 6;              // a mark is in view when this much glass shows beyond its ring
@@ -43,6 +46,7 @@ const lerp = (a, b, k) => a + (b - a) * k;
 const ease = (k) => 1 - (1 - k) * (1 - k);   // ease-out: quick to leave, soft to land
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const inside = (r, px, py) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+const onField = (v, sx, sy) => !v.rect || inside(v.rect, sx, sy);   // a glass point on the field rect (all of it before the rect is known)
 const rectOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };
 
 // ---- THE SNAP RULE (§4.3), pure, so probes/scratch-drag.mjs can try it on a hand-made board.
@@ -168,6 +172,28 @@ export function placeOf(board, team, lane, x, glass) {
   return g;
 }
 
+// ---- THE BANNER'S WORDS (§4.5), pure. LOSES is read in library.js's order (strongest counter first) and never re-sorted.
+// In a list a role is its glyph and its name bound by a no-break space: the banner wraps on the portrait glass, and a plain
+// space let it end a line on 'beats ◆' and start the next on 'BLADE' (the critic's round 2). The card's own role opens the
+// line, where no break can fall, and keeps its plain space.
+const roleName = (r) => `${ROLE_GLYPH[r]}\u00A0${ROLES[r]}`;
+export const roleNames = (rs) => (rs.length ? rs.map(roleName).join(' ') : '—');
+// what a card wins: the shapes the judge says it beats, and for THE GATE BREAKER the gates. ⬢ SIEGE beats no shape by the
+// judge - its trade is the strongholds, which take its long guns whole (sim.js THE WALL) - so `beats —` would hide the one
+// thing the card is for; it reads `breaks GATES` instead, and a breaker that also beats shapes says both.
+export function wins(role) {
+  const out = [];
+  if (BEATS[role].length || role !== GATE_BREAKER) out.push(`beats ${roleNames(BEATS[role])}`);
+  if (role === GATE_BREAKER) out.push('breaks GATES');
+  return out.join(' · ');
+}
+// the banner's line: the glyph and the role, its job, what it wins, what it loses to. The gate breaker's job IS its trade (its
+// face prints `gate breaker` where the others print their weapon), so `breaks GATES` stands in the job's place and says it once.
+export function holdLine(role) {
+  const job = role === GATE_BREAKER ? [] : [ROLE_JOB[role]];
+  return [`${ROLE_GLYPH[role]} ${ROLES[role]}`, ...job, wins(role), `loses to ${roleNames(LOSES[role])}`].join(' · ');
+}
+
 // ---- THE MACHINE. `view` is main.js's (§9.3): the spec hands createDrag no view, so it is taken when given and read off
 // window.VECTOR otherwise — edge pan moves it, and every conversion goes through R with it.
 export function createDrag({ canvas, R, sim, state, hud, minimap, announce, sound, order, surge, coach, glass, view }) {
@@ -213,59 +239,129 @@ export function createDrag({ canvas, R, sim, state, hud, minimap, announce, soun
     if (!r) return { left: -Infinity, right: Infinity, top: -Infinity, bottom: Infinity };
     return { left: r.x + LABEL_GAP_PX, right: r.x + r.w - LABEL_GAP_PX, top: r.y + LABEL_GAP_PX, bottom: r.y + r.h - LABEL_GAP_PX };
   }
-  // THE PLATE'S LINE: while a plate is on, a word of width w at x that would share its columns keeps to the side of the plate
-  // its mark (at glass y markY) is on, so the plate reads whole and never stands between a word and its mark
-  function cutAtPlate(rm, x, w, markY) {
-    const plate = zones.plate;
-    if (!plate || !plate.classList.contains('on')) return;
-    const p = rectOf(plate);
-    if (x + w / 2 <= p.x || x - w / 2 >= p.x + p.w) return;
-    if (markY < p.y) rm.bottom = Math.min(rm.bottom, p.y - LABEL_GAP_PX);
-    else rm.top = Math.max(rm.top, p.y + p.h + LABEL_GAP_PX);
+  // THE PANES' LINES: the plate and the banner stand over the field. While one is up, a word of width w at x that would share
+  // its columns keeps to the side of that pane its mark (at glass y markY) is on, so the pane reads whole and never stands
+  // between a word and its mark. The banner stays up through a drag begun from a still press (§4.5), and the lane word, seated
+  // under the finger, printed across its second line (the critic's round-4 phone frame: 'CENTREght twin-shot orbs').
+  function cutAtPanes(rm, x, w, markY) {
+    for (const pane of [zones.plate, zones.banner]) {
+      if (!pane || !pane.classList.contains('on')) continue;
+      const p = rectOf(pane);
+      if (x + w / 2 <= p.x || x - w / 2 >= p.x + p.w) continue;
+      if (markY < p.y) rm.bottom = Math.min(rm.bottom, p.y - LABEL_GAP_PX);
+      else rm.top = Math.max(rm.top, p.y + p.h + LABEL_GAP_PX);
+    }
   }
   const overlaps = (a, b) => a.right > b.left && a.left < b.right && a.bottom > b.top && a.top < b.bottom;
   // a word above its mark (its bottom centre at (px, above)), lifted clear of any box it covers; when the lift would climb out
-  // of the word's room it goes under its mark instead (its top at `below`), lowered clear the same way. Gives its box, for the
-  // next word to keep clear of.
-  function placeClear(el, v, px, above, below, boxes) {
+  // of the word's room it goes under its mark instead (its top at `below`), lowered clear the same way. A word that must not
+  // climb (climb false) goes under at once when its seat above is taken. Gives its box, for the next word to keep clear of.
+  function placeClear(el, v, px, above, below, boxes, climb = true) {
     const w = el.offsetWidth || 0, h = el.offsetHeight || 0, rm = room(v), x = clamp(px, rm.left + w / 2, rm.right - w / 2);
-    cutAtPlate(rm, x, w, (above + below) / 2);
+    cutAtPanes(rm, x, w, (above + below) / 2);
     const boxAt = (top) => ({ left: x - w / 2, right: x + w / 2, top, bottom: top + h });
     const clear = (box, off) => {   // off: the top the word takes to get off the box it covers
       for (let hit = boxes.find((b) => overlaps(box, b)), n = 0; hit && n < boxes.length; hit = boxes.find((b) => overlaps(box, b)), n++) box = boxAt(off(hit));
       return box;
     };
-    let box = clear(boxAt(clamp(above, rm.top + h, rm.bottom) - h), (b) => b.top - LABEL_GAP_PX - h);
-    if (box.top < rm.top) box = clear(boxAt(clamp(below, rm.top, rm.bottom - h)), (b) => b.bottom + LABEL_GAP_PX);
+    let box = boxAt(clamp(above, rm.top + h, rm.bottom) - h);
+    const taken = boxes.some((b) => overlaps(box, b));
+    if (climb) box = clear(box, (b) => b.top - LABEL_GAP_PX - h);
+    if (box.top < rm.top || (taken && !climb)) box = clear(boxAt(clamp(below, rm.top, rm.bottom - h)), (b) => b.bottom + LABEL_GAP_PX);
     place(el, x, box.bottom);
     return box;
   }
   const chips = [];   // { el, x, y, until } in world units
+  // an order chip is seated on its point the moment it is said, and the frame (kicked: a desk digit's tap orders with no frame
+  // running) keeps it there until it goes
   function sayChip(text, x, y, ms) {
-    const el = label('lbl chip'); el.textContent = text; el.style.display = 'block';
-    chips.push({ el, x, y, until: now() + ms });
+    const c = { el: label('lbl chip'), x, y, until: now() + ms };
+    c.el.textContent = text;
+    chips.push(c);
+    seatChip(c, viewNow(), others());
+    kick();
   }
-  // the order chips ride their points, each clear of the words placed before it this frame
+  // A chip rides its point, clear of the words placed before it this frame; one whose point has left the field rect is hidden,
+  // as main.js hides its own words: pinned to the rect's edge it named a place that was not there (the critic's round-3 shatter
+  // frames: '■ ARMOR SURGE → CENTRE' hung at the left edge, its point 450-660 px off the glass). Gives its box, or null.
+  function seatChip(c, v, boxes) {
+    if (!v) return null;
+    const [sx, sy] = R.toScreen(v, c.x, c.y), on = onField(v, sx, sy), r = CP_R * v.zoom + 10;
+    c.el.style.display = on ? 'block' : 'none';
+    return on ? placeClear(c.el, v, sx, sy - r, sy + r, boxes) : null;
+  }
   function stepChips(t, boxes) {
     const v = viewNow();
     for (let i = chips.length - 1; i >= 0; i--) {
       const c = chips[i], left = c.until - t;
       if (left <= 0) { drop(c.el); chips.splice(i, 1); continue; }
-      if (v) { const [sx, sy] = R.toScreen(v, c.x, c.y), r = CP_R * v.zoom + 10; boxes.push(placeClear(c.el, v, sx, sy - r, sy + r, boxes)); }
+      const box = seatChip(c, v, boxes);
+      if (box) boxes.push(box);
       c.el.style.opacity = left < 200 ? left / 200 : 1;
     }
   }
-  // the lane word at the finger, then the chip: on its mark's ring, at the aim when the drop would cancel, stacked over the
-  // word at a drop surface off the field; each keeps clear of the boxes given and adds its own
+  // the snapped mark's gold ring on the glass, { x, y, r } to its stroke's outer edge, for the words to keep off: a finger
+  // resting on a checkpoint put the lane word, 22 px above it, across the top of that ring (the critic's round-1 desk and
+  // portrait frames: CENTRE over THE CENTRE's ring and the ghost's first square). None for the surge, whose ring of 300 is the
+  // lane itself around the finger, nor at a drop surface off the field, where the mark is not under the finger.
+  function ringOf(d, v) {
+    if (!d.snap || !v || d.surface || d.snap.kind === 'lane') return null;
+    const [x, y] = R.toScreen(v, d.snap.x, d.snap.y);
+    return { x, y, r: ringR(d.snap) * v.zoom + RING_EDGE_PX };
+  }
+  const squareOf = (c) => ({ left: c.x - c.r, right: c.x + c.r, top: c.y - c.r, bottom: c.y + c.r });
+  // the span [lo, hi] the ring's circle covers across the glass rows top..bottom, or null when those rows miss it
+  function chordOf(c, top, bottom) {
+    if (!c) return null;
+    const dy = c.y < top ? top - c.y : c.y > bottom ? c.y - bottom : 0;
+    if (dy >= c.r) return null;
+    const half = Math.sqrt(c.r * c.r - dy * dy);
+    return { lo: c.x - half, hi: c.x + half };
+  }
+  // THE FINGER'S SEAT (a touch): the lane word stands beside the finger at its height - left first, the side a right thumb,
+  // reaching in from the bottom right, leaves open. Seated under the finger it sat in the strip of glass the thumb covers (the
+  // reason the ghost rides 48 px up), and a phone never showed it (the critic's round-4 frames: CENTRE 22-42 px under the
+  // touch point, in its column). Each seat keeps off the snapped ring as the circle it is - its square would shove the word off
+  // the finger's row, where the ring's lower arc leaves the glass beside the finger free - and a row above and a row below are
+  // tried when both seats at the finger's height cover a label. The first seat that fits the room and covers no label wins,
+  // else the first that fits the room, else the first pinned inside it. Its room is cut at the panes by the aim, where the
+  // lane is read. Gives its box.
+  function fingerSeat(el, v, d, ring, boxes) {
+    const w = el.offsetWidth || 0, h = el.offsetHeight || 0, rm = room(v);
+    cutAtPanes(rm, d.x, 2 * (FINGER_PX + w), d.ay);   // the columns of both seats
+    const seatAt = (side, row) => {
+      const top = clamp(d.y - h / 2 + row * (h + LABEL_GAP_PX), rm.top, rm.bottom - h), ch = chordOf(ring, top, top + h);
+      let left = side < 0 ? d.x - FINGER_PX - w : d.x + FINGER_PX;
+      if (ch && left < ch.hi + LABEL_GAP_PX && left + w > ch.lo - LABEL_GAP_PX) left = side < 0 ? ch.lo - LABEL_GAP_PX - w : ch.hi + LABEL_GAP_PX;
+      return { left, right: left + w, top, bottom: top + h, fits: left >= rm.left && left + w <= rm.right };
+    };
+    const seats = [0, -1, 1].flatMap((row) => [seatAt(-1, row), seatAt(1, row)]);
+    const fit = seats.filter((s) => s.fits);
+    let box = fit.find((s) => !boxes.some((b) => overlaps(s, b))) || fit[0];
+    if (!box) { const left = clamp(seats[0].left, rm.left, rm.right - w); box = { ...seats[0], left, right: left + w }; }
+    place(el, (box.left + box.right) / 2, box.bottom);
+    return box;
+  }
+  // the lane word at the finger, then the chip: on its mark's ring, at the aim when the drop would cancel, over the finger
+  // (clear of a mouse's word) at a drop surface off the field; each keeps clear of the boxes given (and of the snapped ring)
+  // and adds its own. A touch seats the word beside the finger (fingerSeat). A mouse, which hides only a point, keeps it over the pointer and
+  // never climbs: with that seat taken - the ring of a mark under the pointer - it goes under. Lifted over the ring it sat
+  // under the chip, 90 px from the pointer, and the glass said CENTRE twice (the critic's round-3 drag: CENTRE · POINT 1 over
+  // CENTRE, the finger with no word).
   function showWords(d, v, boxes) {
+    const ring = ringOf(d, v), square = ring && squareOf(ring);
     laneEl.style.display = d.lane >= 0 ? 'block' : 'none';
-    if (d.lane >= 0) { laneEl.textContent = laneWord(glassNow(), team, d.lane); boxes.push(placeClear(laneEl, v, d.x, d.y - WORD_PX, d.y + WORD_PX, boxes)); }
+    if (d.lane >= 0) {
+      laneEl.textContent = laneWord(glassNow(), team, d.lane);
+      boxes.push(d.touch ? fingerSeat(laneEl, v, d, ring, boxes) : placeClear(laneEl, v, d.x, d.y - WORD_PX, d.y + WORD_PX, square ? [...boxes, square] : boxes, false));
+    }
+    if (square) boxes.push(square);
     chipEl.style.display = 'block';
     chipEl.classList.toggle('cancel', !d.snap);
     chipEl.textContent = d.snap ? d.snap.chip : 'RELEASE TO CANCEL';
     let x = d.ax, y = d.ay, r = CHIP_PX;
     if (d.snap && (d.surface || !v)) { x = d.x; y = d.y; r = WORD_PX + CHIP_PX; }
-    else if (d.snap) { [x, y] = R.toScreen(v, d.snap.x, d.snap.y); r = ringR(d.snap) * v.zoom + 8; }
+    else if (d.snap) { [x, y] = R.toScreen(v, d.snap.x, d.snap.y); r = ringR(d.snap) * v.zoom + CHIP_GAP_PX; }
     boxes.push(placeClear(chipEl, v, x, y - r, y + r, boxes));
   }
   function hideWords() { laneEl.style.display = 'none'; chipEl.style.display = 'none'; }
@@ -367,16 +463,30 @@ export function createDrag({ canvas, R, sim, state, hud, minimap, announce, soun
   // an exact hit on the mark, and the next points stand 1,300 wu (≥ 390 px on every glass) from it, so a jitter re-snaps
   // nothing. The pan itself re-reads nothing under the finger (edge pan does: there the finger asks to see elsewhere). A mark
   // already in view is never led to - the ghost slides to it as §4.3 says - and a drop surface off the field never leads.
-  // A mark is in view when its ring sits whole inside the field rect; a big ring on a small glass makes do with a quarter of it.
+  // A mark is in view when its ring sits whole inside the field rect, and below a live plate over its columns with room for its
+  // chip (the critic's round-1 keep drag: THEIR KEEP led onto the landscape glass by the rect alone stood at y 117 with the plate
+  // over the top half of its ring and its core, and the chip pushed down onto the ring). A big ring on a small glass makes do with
+  // a quarter of it, and a glass too short for the plate's floor seats the mark as low as the rect lets it.
   const inset = (v, s) => Math.min(ringR(s) * v.zoom + RING_GAP_PX, v.rect.w / 4, v.rect.h / 4);
+  function markRows(v, sx, m) {
+    const r = v.rect, bottom = r.y + r.h - m;
+    let top = r.y + m;
+    const plate = zones.plate;
+    if (plate && plate.classList.contains('on')) {
+      const p = rectOf(plate);
+      if (sx + m > p.x && sx - m < p.x + p.w) top = Math.max(top, p.y + p.h + LABEL_GAP_PX + (chipEl.offsetHeight || CHIP_PX) + CHIP_GAP_PX + m);
+    }
+    return { top: Math.min(top, bottom), bottom };
+  }
   function inView(v, s) {
     const r = v.rect; if (!r) return true;
-    const m = inset(v, s), [sx, sy] = R.toScreen(v, s.x, s.y);
-    return sx >= r.x + m && sx <= r.x + r.w - m && sy >= r.y + m && sy <= r.y + r.h - m;
+    const m = inset(v, s), [sx, sy] = R.toScreen(v, s.x, s.y), rows = markRows(v, sx, m);
+    return sx >= r.x + m && sx <= r.x + r.w - m && sy >= rows.top && sy <= rows.bottom;
   }
   function lead(d, v, dt) {
     const s = d.snap, r = v.rect, m = inset(v, s), [sx, sy] = R.toScreen(v, s.x, s.y);
-    const tx = clamp(v.rot ? sx : d.ax, r.x + m, r.x + r.w - m), ty = clamp(v.rot ? d.ay : sy, r.y + m, r.y + r.h - m);   // portrait stands the lane up: along is the glass's y
+    const tx = clamp(v.rot ? sx : d.ax, r.x + m, r.x + r.w - m), rows = markRows(v, tx, m);
+    const ty = clamp(v.rot ? d.ay : sy, rows.top, rows.bottom);   // portrait stands the lane up: along is the glass's y
     const dx = tx - sx, dy = ty - sy;
     if (Math.abs(dx) < 1 && Math.abs(dy) < 1) { d.lead = false; return; }
     const k = 1 - Math.pow(1 - LEAD_K, dt / FRAME_MS);
@@ -390,12 +500,16 @@ export function createDrag({ canvas, R, sim, state, hud, minimap, announce, soun
     for (const k of ['hand', 'strip', 'surge']) if (zones[k]) rects[k] = rectOf(zones[k]);
   }
   const shown = (el) => !!el && getComputedStyle(el).display !== 'none';
-  // the cancel zones (§4.3): the hand, the strip, the surge band, a live plate, the banner, off the glass
-  function zoneAt(px, py) {
-    if (!inside(rects.glass, px, py)) return 'off';
-    for (const k of ['hand', 'strip', 'surge']) if (rects[k] && inside(rects[k], px, py)) return k;
-    if (zones.plate && zones.plate.classList.contains('on') && inside(rectOf(zones.plate), px, py)) return 'plate';
-    if (shown(zones.banner) && inside(rectOf(zones.banner), px, py)) return 'banner';
+  // the cancel zones (§4.3): off the glass, the hand, the strip and the surge band are judged by the finger - the chrome the
+  // finger goes back to - and the two panes standing over the field, a live plate and the banner, by the aim, where the ghost
+  // sits: the ghost on a pane is hidden by it and is refused, a finger on a pane with the ghost on the lane above is a drop on
+  // that lane. The critic's round-1 phone frame: after the hold that explains a card (§4.5, the banner stays up through the
+  // drag), a finger anywhere on the 740 x 46 banner painted a ghost that sat squarely on the centre lane red and mustered nothing.
+  function zoneAt(d) {
+    if (!inside(rects.glass, d.x, d.y)) return 'off';
+    for (const k of ['hand', 'strip', 'surge']) if (rects[k] && inside(rects[k], d.x, d.y)) return k;
+    if (zones.plate && zones.plate.classList.contains('on') && inside(rectOf(zones.plate), d.ax, d.ay)) return 'plate';
+    if (shown(zones.banner) && inside(rectOf(zones.banner), d.ax, d.ay)) return 'banner';
     return null;
   }
   // the drop surfaces that are not the field: the minimap's bands and the strip's lane arrows = that lane's next point
@@ -413,11 +527,16 @@ export function createDrag({ canvas, R, sim, state, hud, minimap, announce, soun
     for (let i = 0; i < U.hi; i++) if (U.alive[i] && U.team[i] !== team && U.lane[i] === lane) n[kinds[U.kind[i]].shape]++;
     return n;
   }
-  // his top role in a lane by the energy standing there - read live off U, as the sim's own fireSurge reads it, so the
-  // chip names the super the plate will name (a snapshot is up to a second old)
-  function ownTop(lane) {
+  // his energy standing in a lane, per role - read live off U, as the sim's own fireSurge reads it, so the chip names the
+  // super the plate will name and a tap never aims at a lane the sim will call empty (a snapshot is up to a second old)
+  function ownEnergy(lane) {
     const f = [0, 0, 0, 0, 0, 0];
     for (let i = 0; i < U.hi; i++) if (U.alive[i] && U.team[i] === team && U.lane[i] === lane) { const k = kinds[U.kind[i]]; f[k.shape] += k.cost; }
+    return f;
+  }
+  // his top role in a lane by the energy standing there, -1 for none
+  function ownTop(lane) {
+    const f = ownEnergy(lane);
     let top = -1;
     for (let r = 0; r < 6; r++) if (f[r] > 0 && (top < 0 || f[r] > f[top])) top = r;
     return top;
@@ -440,10 +559,8 @@ export function createDrag({ canvas, R, sim, state, hud, minimap, announce, soun
   function banner(i) {
     const b = deck[i], role = b.role, a = coach(), n = enemyRoles(followLane());
     const count = (rs) => rs.reduce((s, r) => s + n[r], 0);
-    const names = (rs) => (rs.length ? rs.map((r) => `${ROLE_GLYPH[r]} ${ROLES[r]}`).join(' ') : '—');
-    const text = `${ROLE_GLYPH[role]} ${ROLES[role]} · ${ROLE_JOB[role]} · beats ${names(BEATS[role])} · loses to ${names(LOSES[role])}`;
     const why = a && a.card === i && a.why ? `why this card: ${a.why}` : '';
-    hud.banner(text, `good ${count(BEATS[role])} · bad ${count(LOSES[role])}`, [BATT_LINE[b.id], why].filter(Boolean).join(' · '));
+    hud.banner(holdLine(role), `good ${count(BEATS[role])} · bad ${count(LOSES[role])}`, [BATT_LINE[b.id], why].filter(Boolean).join(' · '));
   }
   // the bits leave in one frame; the banner lingers `linger` ms (800 after a release, 0 after a tap)
   function clearPreview(linger) {
@@ -475,7 +592,7 @@ export function createDrag({ canvas, R, sim, state, hud, minimap, announce, soun
   function tapCard(i, lane, t = now()) {
     if (live(state.drag)) return false;
     const a = coach();
-    if (i === 'surge') return fireSurge(a ? a.lane : followLane());
+    if (i === 'surge') return fireSurge(surgeLane(a), t);
     if (!(i >= 0 && i < deck.length) || sim.result) return false;
     if (!affordable(i)) { hud.shake(i); return false; }
     if (!a) { nudge(hud.cards[i]); return false; }   // no advice (the end): nothing, the card dim-pulses
@@ -484,9 +601,27 @@ export function createDrag({ canvas, R, sim, state, hud, minimap, announce, soun
     hud.shake(i); return false;
   }
   function nudge(el) { el.classList.add('nudge'); setTimeout(() => el.classList.remove('nudge'), NUDGE_MS); }
-  function fireSurge(lane) {
-    if (surge(lane)) return true;
-    hud.shake('surge'); return false;
+  // WHERE A TAPPED SURGE GOES (§4.6: the coach's lane, the followed lane when it names none), read the way the coached player
+  // reads it (coached.js surgeInto): the coach's lane on SURGE; otherwise the coach's lane when his bodies stand there, then
+  // the followed lane when they stand there, then the lane holding the most of his energy. The sim refuses a surge into an
+  // empty lane and keeps the meter, so the coach's lane taken blind - a DEFEND lane with none of his there - only shook the
+  // band (the critic's round 2). With nothing of his on the field the coach's lane is asked anyway, and the band shakes.
+  function surgeLane(a) {
+    if (a && a.verb === 'SURGE') return a.lane;
+    const energy = [0, 1, 2].map((l) => ownEnergy(l).reduce((s, v) => s + v, 0));
+    const standing = [a ? a.lane : -1, followLane()].find((l) => l >= 0 && energy[l] > 0);
+    if (standing !== undefined) return standing;
+    const heaviest = energy.indexOf(Math.max(...energy));
+    return energy[heaviest] > 0 ? heaviest : a ? a.lane : followLane();
+  }
+  // a fired surge is the big moment (§5.1), so the camera goes to it as it goes to an order: the follow takes the surge's lane
+  // (a tap fired BOTTOM while the camera held TOP under the plate that named BOTTOM - the critic's round 2) and is no longer
+  // free after an edge pan; chosenAt is main.js's re-follow stamp, so the hottest lane waits its twelve seconds
+  function fireSurge(lane, t) {
+    if (!surge(lane)) { hud.shake('surge'); return false; }
+    if (!state.follow) state.follow = { hot: 0 };
+    Object.assign(state.follow, { lane, free: false, chosenAt: t });   // in place: the loop keeps its reference
+    return true;
   }
 
   // ---- THE POINTER MACHINE. The press is taken on the card (or the band) and captured there; every move and the release
@@ -529,7 +664,7 @@ export function createDrag({ canvas, R, sim, state, hud, minimap, announce, soun
   function track(d, t) {
     const v = viewNow(); if (!v) return;
     aim(d);
-    const surf = dropSurface(d.x, d.y), zone = surf ? null : zoneAt(d.x, d.y);
+    const surf = dropSurface(d.x, d.y), zone = surf ? null : zoneAt(d);
     let goal = null, lane = -1;
     if (!zone) {
       let wx, wy;
@@ -578,7 +713,7 @@ export function createDrag({ canvas, R, sim, state, hud, minimap, announce, soun
     const s = d.snap;
     if (d.batt === 'surge') {
       state.drag = null;
-      if (fireSurge(s.lane)) sayChip(s.chip, s.x, s.y, CHIP_MS);
+      if (fireSurge(s.lane, t)) sayChip(s.chip, s.x, s.y, CHIP_MS);
       return;
     }
     if (!commit(d.batt, s, t)) { fade(d, t); return; }   // the till refused (the price climbed under the finger): nothing charged

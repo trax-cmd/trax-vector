@@ -2,15 +2,15 @@
 // BREACH (SPEC-v0.6 §8). It sees what a person sees - the snapshot - and the till (sim.price), and it
 // answers with deploys, one announced wave at a time and the surge. The rules of §8 run in order at every
 // look: defend the weak lane, mass a wave on the clock (or counter-push where the enemy is thin the moment
-// it commits elsewhere), surge when the hammer is over the anvil, otherwise buy the centre; at the bell,
-// one card into each lane. An attack never goes to a lane with nothing left to break, and no order goes to
-// a lane it cannot muster into. Its only randomness is its own seeded stream, so a replay with the same
-// seed gives the same orders and the sim's stream is never touched.
+// it commits elsewhere), surge when the hammer is over the anvil, send the long guns to a gate it stands
+// at, otherwise buy the centre; at the bell, one card into each lane. An attack never goes to a lane with
+// nothing left to break, and no order goes to a lane it cannot muster into. Its only randomness is its own
+// seeded stream, so a replay with the same seed gives the same orders and the sim's stream is never touched.
 import { rng32 } from '../sim/rng.js';
-import { BEATS, WAVE_NAMES } from '../sim/library.js';
+import { BEATS, WAVE_NAMES, GATE_BREAKER } from '../sim/library.js';
 import { TEMPERS } from '../sim/sim.js';
 import { CP_X, CENTRE, slotsToward } from '../sim/lanes.js';
-import { readLanes, surgeLane, topRole, waveTop, urgency, afford } from './coach.js';
+import { readLanes, surgeLane, topRole, waveTop, byUrgency, afford } from './coach.js';
 
 const SWARM = 0, ARMOR = 1, STRIKE = 2;
 const TICKS = 30;                 // sim ticks a second (TICK = 1/30)
@@ -77,13 +77,18 @@ export function createBot(sim, team, opts = {}) {
 
   // (1) DEFEND THE WEAK LANE: the counter to its top enemy role at its own front, at most two cards and 60 % of the purse;
   // with two weak lanes each gets one, the gate under fire first. Returns whether any lane is weak.
+  // THE WALK-IN (the coach's, coach.js readLane) IS ADDED TO §8 ON THE MEASURE: a lane they field and it does not is answered
+  // here too, at its next point. MASS and THE CENTRE each choose the lane where the enemy fields least, so without it the two
+  // armies walked different lanes past each other - the west's 70-85 up an empty wing while the east's 40 walked the centre
+  // to the west gate unmet - and the timeline read 8-11 s without a hit in three seeds of sixteen. Both sides now read the
+  // field with the same eyes: a column in an empty lane is met.
   function defend(snap, lanes, deck, purse, send) {
-    const weak = lanes.filter((L) => L.weak).sort((a, b) => urgency(a) - urgency(b));
+    const weak = lanes.filter((L) => L.weak || L.walkIn).sort(byUrgency);
     let share = snap.energy[team] * DEFEND_SHARE;
     for (let k = 0; k < DEFEND_CARDS && weak.length && purse.sent < burst; k++) {
       const L = weak[k % weak.length], c = answer(deck, L.top, Math.min(purse.left, share));
       if (!c) break;
-      send(c, L.lane, L.ownFront); share -= c.price;
+      send(c, L.lane, L.weak ? L.ownFront : L.nextX); share -= c.price;
     }
     return weak.length > 0;
   }
@@ -142,6 +147,17 @@ export function createBot(sim, team, opts = {}) {
     else if (snap.tick >= pending.at + WAVE_PATIENCE) pending = null;
   }
 
+  // THE GATE BREAKER (added to §8 beside the coach's BREAK): a lane whose next point is their gate or, the gate dead, their
+  // keeps - where it fields no ⬢ SIEGE yet - gets the cheapest affordable siege card at that stronghold, the heaviest such
+  // lane first: only the long guns land whole there (sim.js THE WALL), so a lane at their gate without one chips at a tenth.
+  // It takes the centre's card for that look. Returns whether it sent one.
+  function breach(snap, lanes, deck, purse, send) {
+    const L = lanes.filter((q) => q.gateOpen && !q.finished && snap.lanes[q.lane].fielded[team][GATE_BREAKER] === 0).sort((a, b) => b.own - a.own)[0];
+    const c = L && within(deck.filter((q) => q.role === GATE_BREAKER), purse.left).sort((a, b) => a.price - b.price)[0];
+    if (c) send(c, L.lane, L.nextX);
+    return !!c;
+  }
+
   // (5) THE CENTRE: no threat and no wave due - one card at x 4500 to the lane whose centre is not his and least defended; with
   // every centre his (the spec is silent) the best lane by advantage gets it at its next point, so the purse never idles
   function centre(lanes, deck, purse, send) {
@@ -172,7 +188,7 @@ export function createBot(sim, team, opts = {}) {
     }
     const surge = surgeLane(snap, team, all);
     if (surge >= 0) cmds.push({ op: 'surge', team, lane: surge });
-    if (!weak && !pending && !waveDue && purse.sent < burst) centre(lanes, deck, purse, send);
+    if (!weak && !pending && !waveDue && purse.sent < burst && !breach(snap, lanes, deck, purse, send)) centre(lanes, deck, purse, send);
     return cmds;
   }
 

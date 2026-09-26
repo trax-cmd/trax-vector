@@ -15,6 +15,7 @@
     --west: #12A7C8; --west-edge: #7FF3FF; --east: #C8321E; --east-edge: #FFB07A;
     --gold: #FFD76A; --beats: #5CFF7A; --loses: #FF4D4D; --ink: #DFE8FF; --dim: #8A94AD;
     --pane: rgba(6, 8, 14, 0.7); --chrome: rgba(6, 8, 14, 0.92); --line: #2A3352; --band: #0E1322;
+    --slate: rgba(6, 8, 14, 0.96);   /* the plate's and the banner's pane: words read over the fight, where --pane let bright rings and lines through */
     --sat: env(safe-area-inset-top, 0px); --sal: env(safe-area-inset-left, 0px); --sar: env(safe-area-inset-right, 0px);
     --strip: 36px; --surge: 36px; --hand: calc(112px + env(safe-area-inset-bottom, 0px));
     --top: calc(var(--strip) + var(--surge) + var(--sat));                  /* the clear field rect's y */
@@ -53,11 +54,14 @@
   /* THE SURGE BAND (§4.6): a bar filling in the team fill with a 1 px edge, the number at the right;
      at 100 gold, pulsing at 1.5 Hz, SURGE READY · DRAG TO A LANE. The bar's width transitions 400 ms so
      a fired surge drains over 400 ms (the drain budget of §4.8). */
-  #surge { position: fixed; left: 0; right: 0; top: calc(var(--strip) + var(--sat)); z-index: 3; height: var(--surge); background: var(--chrome); border-bottom: 1px solid var(--line); box-sizing: border-box; touch-action: none; overflow: hidden; }
-  #surge .bar { position: absolute; left: var(--sal); top: 3px; bottom: 3px; width: 0; background: var(--west); box-shadow: inset 0 0 0 1px var(--west-edge); transition: width .4s ease-out; }   /* the edge is an inset shadow: nothing is drawn at 0 */
+  /* The number keeps its own lane at the right (--num: the ⋯ corner's 52, the widest number '99%', a 12 px gap): the fill
+     is --p (hud.js, 0-1) of the track left of it, so the fill's bright end never crosses the number and the white
+     number never sits on the fill. READY spans the whole band - its dark words are read on the gold. */
+  #surge { --num: calc(92px + var(--sar)); position: fixed; left: 0; right: 0; top: calc(var(--strip) + var(--sat)); z-index: 3; height: var(--surge); background: var(--chrome); border-bottom: 1px solid var(--line); box-sizing: border-box; touch-action: none; overflow: hidden; }
+  #surge .bar { position: absolute; left: var(--sal); top: 3px; bottom: 3px; width: calc((100% - var(--sal) - var(--num)) * var(--p, 0)); background: var(--west); box-shadow: inset 0 0 0 1px var(--west-edge); transition: width .4s ease-out; }   /* the edge is an inset shadow: nothing is drawn at 0 */
   #surge.t1 .bar { background: var(--east); box-shadow: inset 0 0 0 1px var(--east-edge); }
   #surge .txt { position: absolute; right: calc(52px + var(--sar)); top: 0; height: 100%; line-height: var(--surge); font-size: 12px; font-weight: 800; letter-spacing: .08em; color: var(--ink); white-space: nowrap; }
-  #surge.ready .bar { background: var(--gold); box-shadow: inset 0 0 0 1px #FFF1B8; animation: surgeready .667s ease-in-out infinite; }   /* one run = one pulse: 1.5 Hz */
+  #surge.ready .bar { width: calc(100% - var(--sal)); background: var(--gold); box-shadow: inset 0 0 0 1px #FFF1B8; animation: surgeready .667s ease-in-out infinite; }   /* one run = one pulse: 1.5 Hz */
   #surge.ready .txt { color: #05060D; font-size: 14px; }
   #surge.shake { animation: shake .2s linear; }
   @keyframes surgeready { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
@@ -66,14 +70,14 @@
      centre and the transform lifts half the plate's own height, so a plate that wraps on portrait is centred
      as well as a one-line one; 150 ms in from 8 px above, 200 ms out; announce.js sets the HTML and toggles
      .on with .t0/.t1. */
-  #plate { position: fixed; left: 0; right: 0; margin: 0 auto; width: fit-content; top: calc(var(--top) + 0.18 * (100vh - var(--top) - var(--hand))); top: calc(var(--top) + 0.18 * (100dvh - var(--top) - var(--hand))); z-index: 4; box-sizing: border-box; height: 44px; line-height: 44px; padding: 0 16px; max-width: 94vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--pane); border-radius: 6px; font-size: 18px; font-weight: 800; letter-spacing: .2em; color: var(--ink); opacity: 0; pointer-events: none; transform: translateY(calc(-50% - 8px)); transition: opacity .2s ease-in, transform .2s ease-in; }
+  #plate { position: fixed; left: 0; right: 0; margin: 0 auto; width: fit-content; top: calc(var(--top) + 0.18 * (100vh - var(--top) - var(--hand))); top: calc(var(--top) + 0.18 * (100dvh - var(--top) - var(--hand))); z-index: 4; box-sizing: border-box; height: 44px; line-height: 44px; padding: 0 16px; max-width: 94vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--slate); border-radius: 6px; font-size: 18px; font-weight: 800; letter-spacing: .2em; color: var(--ink); opacity: 0; pointer-events: none; transform: translateY(calc(-50% - 8px)); transition: opacity .2s ease-in, transform .2s ease-in; }
   #plate.on { opacity: 1; pointer-events: auto; transform: translateY(-50%); transition: opacity .15s ease-out, transform .15s ease-out; }
   #plate.t0 { color: var(--west-edge); } #plate.t1 { color: var(--east-edge); }
   #plate .gold { color: var(--gold); }   /* the wave plate's answer glyph (announce.js marks it <b class="gold">) */
 
   /* THE BANNER (§4.5): the hold preview words, 36 px above the hand; the counts at the right, the
      battalion's line (or the coach's reason) under. On portrait it keeps clear of the standing minimap. */
-  #banner { position: fixed; left: 0; right: 0; margin: 0 auto; width: fit-content; bottom: calc(var(--hand) + 36px); z-index: 5; display: none; grid-template-columns: 1fr auto; column-gap: 12px; box-sizing: border-box; max-width: min(740px, 92vw); padding: 6px 12px; background: var(--pane); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; line-height: 16px; letter-spacing: .06em; }
+  #banner { position: fixed; left: 0; right: 0; margin: 0 auto; width: fit-content; bottom: calc(var(--hand) + 36px); z-index: 5; display: none; grid-template-columns: 1fr auto; column-gap: 12px; box-sizing: border-box; max-width: min(740px, 92vw); padding: 6px 12px; background: var(--slate); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; line-height: 16px; letter-spacing: .06em; }
   #banner.on { display: grid; }
   #banner .txt { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #banner .right { color: var(--gold); font-weight: 800; white-space: nowrap; }
@@ -86,10 +90,12 @@
 
   #labels { position: fixed; inset: 0; z-index: 7; pointer-events: none; overflow: hidden; }
   .lbl { position: absolute; left: 0; top: 0; white-space: nowrap; font-weight: 800; font-size: 16px; letter-spacing: .1em; color: var(--ink); will-change: transform, opacity; }
+  /* the counter lesson (§6.2) prints at the kills' centroid, where the fight's bolts streak: it reads on a pane like the chips */
+  .lbl.t0, .lbl.t1 { padding: 3px 7px; border-radius: 6px; background: var(--pane); }
   .lbl.t0 { color: var(--west-edge); } .lbl.t1 { color: var(--east-edge); }
   .lbl.chip { font-size: 12px; padding: 3px 7px; border-radius: 6px; background: var(--pane); }
   .lbl.word, .lbl.lane, .lbl.gold { font-size: 12px; color: var(--gold); }
-  .lbl.lane { padding: 3px 7px; border-radius: 6px; background: var(--pane); }
+  .lbl.lane, .lbl.gold { padding: 3px 7px; border-radius: 6px; background: var(--pane); }   /* the 2× stands over the centre ring, where bodies and their hold rings pass: it reads on a pane like the lane word and the chips */
   .lbl.chip.cancel { color: var(--loses); }
 
   /* THE HAND (§4.2): a fixed grid, nothing scrolls, the cards' rects are §1's numbers. */
@@ -117,9 +123,13 @@
   .card .vs { display: flex; align-items: center; font-size: 12px; line-height: 14px; white-space: nowrap; overflow: hidden; }
   .card .vs i { font-style: normal; margin-right: 2px; }
   .card .vs .beats { color: var(--beats); } .card .vs .loses { color: var(--loses); }
+  .card .vs .gate { margin-right: 2px; font-weight: 800; letter-spacing: .04em; }   /* the gate breaker's prey in words (hud.js beatsSlot): 12 px, the beats green */
   .card .vs .bar { flex: none; width: 1px; height: 12px; margin: 0 4px 0 2px; background: var(--line); }
   .card .tag { display: none; position: absolute; top: -6px; right: 6px; height: 12px; line-height: 12px; padding: 0 4px; border-radius: 3px 3px 0 0; background: var(--gold); color: #05060D; font-size: 10px; font-weight: 800; letter-spacing: .1em; }
-  @media (max-width: 999px) and (orientation: landscape) { .card .role { display: none; } }
+  /* the NAME's tracking by face: LODESTONE RING, the longest of the seventeen, needs 85 px at .06em (the probe's
+     Consolas) where the landscape face gives 84 and the portrait 79; .04em takes it to 82.6, .01em to 78.4 */
+  @media (max-width: 999px) and (orientation: landscape) { .card .role { display: none; } .card .name { letter-spacing: .04em; } }
+  @media (orientation: portrait) { .card .name { letter-spacing: .01em; } }
   .card.dim { opacity: 0.45; }
   .card.dim .p { color: rgba(255, 77, 77, 0.85); }
   .card.dim .arc, .card.dim .wait { display: block; }
@@ -155,8 +165,17 @@
      for a phone whose system face runs a little wider than the probe's Segoe UI. The plate stays ONE inline flow: announce.js
      writes a text run, the gold <b> answer glyph and ' answers' as siblings, and a flex or grid box would seat
      them as three items out of order; a block keeps the sentence, and align-content centres a single line. */
+  @media (orientation: portrait), (max-width: 999px) and (orientation: landscape) {
+    #plate { display: block; align-content: center; height: auto; min-height: 44px; line-height: 22px; padding: 0 12px; white-space: normal; text-wrap: balance; text-align: center; }
+  }
+  /* the landscape phone's minimap stands at the plate's height (160 × 89 at (676, 60), the plate's centre at y 99), so
+     the plate is centred on the room left of it - the map's left edge less an 8 px gap - with an 8 px gutter on both
+     ends; a long plate wraps to two lines of 22 inside its 44 like portrait's (at .2em a line holds ~46 caps) */
+  @media (max-width: 999px) and (orientation: landscape) {
+    #plate { left: var(--sal); right: calc(176px + var(--sar)); max-width: calc(100vw - 192px - var(--sal) - var(--sar)); }
+  }
   @media (orientation: portrait) {
-    #plate { display: block; align-content: center; height: auto; min-height: 44px; line-height: 22px; padding: 0 12px; white-space: normal; text-wrap: balance; letter-spacing: .10em; text-align: center; }
+    #plate { letter-spacing: .10em; }
     #banner { grid-template-columns: 1fr; row-gap: 2px; }
     #banner .txt { white-space: normal; }
     .card { padding: 4px 4px 5px; }

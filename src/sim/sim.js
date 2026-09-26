@@ -10,7 +10,7 @@
 // The march as measured against §0's line (SIM's rulings of 2026-09-25, each at its rule): a column leaves a
 // PICKET at every point it passes and marches on; a body SEES the enemy vanguard of its lane a point and a
 // half away and closes on it; an unopposed march goes at double time; the column WAITS at the lane's end
-// for its points; THE WALL turns small arms off the strongholds, and a surge is the breach.
+// for its points; THE WALL turns small arms off the strongholds until a side's gates are down, and a surge is the breach.
 import { rng32 } from './rng.js';
 import { Grid } from './grid.js';
 import { compileAll } from './units.js';
@@ -23,7 +23,10 @@ export const TICK = 1 / 30;
 // read 6-2, too hard for EASY), NORMAL 4-4 at 0.95, HARD 1-7 at 1.05. NORMAL read 4-4 at 0.85 too, but the captain is NORMAL in both of
 // tools/timeline.js's modes and at 0.85 the proof line missed three rows by a seed each (coached wins before 240 s, the captains' meters
 // late for the first gate hit, a quiet gap); of NORMAL's fair values, 0.95 is the one that holds the whole line (0.90 and 1.00 miss rows).
-export const TEMPERS = { easy: { incomeM: 0.55, every: 120, burst: 2, wave: 55 }, normal: { incomeM: 0.95, every: 75, burst: 3, wave: 40 }, hard: { incomeM: 1.05, every: 45, burst: 4, wave: 30 } };
+/* HARD re-seated 2026-09-25 after round four (THE FLOCK and the open keeps took the stacked crowds' free firepower from the biggest army):
+   1.05 read 3-5, 1.10 4-4, 1.12 3-5, 1.13 1-7, 1.14 0-8, 1.15 0-8 - a knife edge, one step of income flipping whole matches; that edge is the
+   rout the next version answers with a comeback. EASY 8-0 and NORMAL 5-3 held untouched. */
+export const TEMPERS = { easy: { incomeM: 0.55, every: 120, burst: 2, wave: 55 }, normal: { incomeM: 0.95, every: 75, burst: 3, wave: 40 }, hard: { incomeM: 1.13, every: 45, burst: 4, wave: 30 } };
 // THE SURGE LEVER: meter per energy of enemy bodies killed - 1,667 energy of kills at mult 1 fills the meter. The one number tools/timeline.js moves (3.5 → 6) until the meter is full on both sides before the first gate hit in six matches of eight; it rides in as DEFAULTS.surgePerEnergy.
 // Seated at the walk's top on the measure of 2026-09-25: with the columns marching (below) the first gate hit lands at 17-95 s, and at 4 the captains' meters were full before it in four matches of eight, at 6 in six to eight.
 export const SURGE_PER_ENERGY = 6;
@@ -46,11 +49,12 @@ export const DEFAULTS = {
   shockR: 700, shockV: 400, shockS: 0.6, shockStun: 1.5,          // a shattered stronghold's shockwave: the loser's bodies within 700 thrown out at 400 wu/s for 0.6 s and stunned 1.5 s
   // THE WALL (SIM's ruling 2026-09-25, on the measure; the spec is silent on what a stronghold takes from whom). A GATE takes a tenth of every shot but two:
   // ⬢ SIEGE's long guns land whole, and so does a surging lane on the gate it surges at - the breach itself, §0's peak: the arc drains from 40 % to 0 in
-  // seconds under the surge, and a shatter follows a surge in every match. A KEEP is the last stand: the long guns land at half, small arms at a
-  // five-hundredth (the arc still drains under a mass of hundreds and the last hp falls to whatever is there, but a decided war's keeps hold until the
-  // winner brings its guns). At a flat 0.35 a massed lane razed a keep in 10 s from its first hit and every war ended by the doom 30-60 s after its first
-  // shatter (84-223 s); at these the loser's counter-push has its minutes, and six of eight wars in both modes run past 240 s as the line wants.
-  wall: 0.1, keepWall: 0.002, keepSiege: 0.5,
+  // seconds under the surge, and a shatter follows a surge in every match. A KEEP is the last stand: the long guns land at half; small arms at a
+  // five-hundredth while a gate of its side stands (at a flat 0.35 a massed lane razed a keep in 10 s from its first hit and the loser's counter-push had
+  // no minutes), and at keepOpen once none does - THE OPEN KEEPS: with every gate down the war is decided, and at the five-hundredth the winner's mass
+  // circled keeps whose arcs did not move for two and a half minutes while the loser had no one left to push with (seed 3 of the captains: its last gate
+  // fell at 83 s, its keeps at 216 and 234 s). At a fiftieth a siege of about three hundred razes a keep in 30-60 s and the doom follows the fight.
+  wall: 0.1, keepWall: 0.002, keepOpen: 0.02, keepSiege: 0.5,
   doomV: 1500, doomTail: 2.5,                  // the doom wave's speed and the seconds after it passes the far corner before the result
   capUnits: 30000, capShots: 80000, capMines: 6000, cell: 96,
   seed: 1, deck: 8,
@@ -133,10 +137,14 @@ export function createSim(opts = {}) {
   // scan sees and the order it sees it in are unchanged, which is what keeps every match replaying byte for byte; only the bodies it
   // would have turned away are no longer looked at. A slot that dies and is born again to the other side before the next build (a
   // hive's or a bloom's child in a dead enemy's slot) is moved to the other chain at its own place (reseat), so a scan under way meets
-  // it, or has passed it, exactly as the full walk would. The separation push reads both sides in index order and walks the grid's list.
+  // it, or has passed it, exactly as the full walk would. A swarm's cohesion reads both sides in index order and walks the grid's list.
   // Positions are indices into grid.items; a chain ends at its cell's end (start[k+1]); prev −1 is a chain's head.
   const side = { next: new Int32Array(N), prev: new Int32Array(N), head: new Int32Array(2 * grid.n), pos: new Int32Array(N), of: new Uint8Array(N) };
   let gridHi = 0;   // how far the grid was built this tick: a slot below it that was alive at the build stands in a cell
+  // THE CONTACT GRID: a fine hash that only the separation push reads, built with the main grid every tick. A 96-wu cell at a stronghold
+  // holds a crowd's hundreds, and a push walked through it met the first bodies of the many beside it rather than the few it touched; at
+  // 24 wu a cell holds a handful and a mote's push box touches four of them.
+  const contact = new Grid(W, H, 24, N);
   // the chains of every cell that holds a body, in one walk down the grid's list (a cell's bodies are one run of it)
   function splitSides() {
     const start = grid.start, items = grid.items, cellOf = grid.cellOf, total = start[grid.n], team = U.team;
@@ -207,15 +215,21 @@ export function createSim(opts = {}) {
     stats: { deployed: [0, 0], musters: [0, 0], kills: [0, 0], spent: [0, 0], towerDmg: [0, 0], roleKills: [new Uint32Array(36), new Uint32Array(36)], captures: [0, 0], centres: [0, 0], shatters: [0, 0], surges: [0, 0], waves: [0, 0] },
   };
   const surgeOpen = [false, false];   // a surge whose eight seconds have not yet been closed out
+  const gatesUp = [3, 3];              // the gates a side still has standing: THE OPEN KEEPS (hurtTower) read it
   const EV_CAP = 2400;
   // the flood (hits, shots, sparks) is capped a tick so a big war cannot drown a frame; the moments (deaths, musters, captures, shatters, the surge, the wave, the doom, the end) always land
   const ev = (e) => { if (S.events.length < EV_CAP) S.events.push(e); };
   const evSure = (e) => { S.events.push(e); };
   const roleOf = (kind) => kinds[kind].shape;
   const mult = () => 1 + S.time * o.escalate;
-  const fillSurge = (team, amt) => { S.surge[team] = Math.min(o.surgeMax, S.surge[team] + amt); };
+  const surgeLive = (team) => S.surgeUntil[team] > S.time;
+  const addSurge = (team, amt) => { S.surge[team] = Math.min(o.surgeMax, S.surge[team] + amt); };
+  // THE METER HOLDS while its side's surge runs: the kills and captures a surge makes do not refill it. They did, at the full rate, and a surge
+  // ended 30-100 % full - thirty surges a match, a plate up more than half the time - so the peak the match is built toward became routine. The
+  // breach's +2,500 (breakLane) is the one fill that lands mid-surge: §0's peak has the meter jump at the shatter the surge made.
+  const fillSurge = (team, amt) => { if (!surgeLive(team)) addSurge(team, amt); };
   // a body is surging while its side's surge runs in its lane: one branch per body in move, fire and hurt
-  const surging = (i) => S.surgeUntil[U.team[i]] > S.time && U.lane[i] === S.surgeLane[U.team[i]];
+  const surging = (i) => surgeLive(U.team[i]) && U.lane[i] === S.surgeLane[U.team[i]];
 
   // ---- slots
   function allocUnit() { if (U.free.length) return U.free.pop(); if (U.hi >= N) return -1; return U.hi++; }
@@ -271,14 +285,14 @@ export function createSim(opts = {}) {
   // it surges at - the breach itself; every other shot, a surging lane's on a keep or on another lane's gate included, is scaled by THE WALL
   function hurtTower(t, dmg, byTeam, byKind, byLane) {
     if (!T.alive[t]) return;
-    const breach = T.kind[t] === 0 && T.lane[t] === byLane && S.surgeUntil[byTeam] > S.time && S.surgeLane[byTeam] === byLane;
+    const breach = T.kind[t] === 0 && T.lane[t] === byLane && surgeLive(byTeam) && S.surgeLane[byTeam] === byLane;
     if (kinds[byKind].shape === 3) { if (T.kind[t]) dmg *= o.keepSiege; }
-    else if (!breach) dmg *= T.kind[t] ? o.keepWall : o.wall;
+    else if (!breach) dmg *= T.kind[t] ? (gatesUp[T.team[t]] ? o.keepWall : o.keepOpen) : o.wall;
     T.hp[t] -= dmg; S.stats.towerDmg[byTeam] += dmg; S.gateHitAt[t] = S.time; S.lastHit = S.time;
     ev({ t: 'towerHit', x: T.x[t], y: T.y[t], team: T.team[t], tower: t, lane: T.lane[t], kind: T.kind[t] });   // kind: 0 a gate, 1 a keep
     if (T.hp[t] > 0) return;
     // THE SHATTER: the stronghold falls, the loser's bodies around it are blown outward, a gate takes its whole lane with it, a last keep dooms its side
-    T.hp[t] = 0; T.alive[t] = 0; S.stats.shatters[byTeam]++;
+    T.hp[t] = 0; T.alive[t] = 0; S.stats.shatters[byTeam]++; if (T.kind[t] === 0) gatesUp[T.team[t]]--;
     evSure({ t: 'shatter', x: T.x[t], y: T.y[t], team: T.team[t], tower: t, kind: T.kind[t], lane: T.lane[t], by: byTeam });
     shockwave(T.x[t], T.y[t], T.team[t]);
     if (T.kind[t] === 0) breakLane(T.lane[t], byTeam, T.x[t]);
@@ -298,7 +312,7 @@ export function createSim(opts = {}) {
   // THE LANE BREAK: a dead gate hands every checkpoint of its lane to the breaker at once, and a quarter of a meter with them
   function breakLane(lane, breaker, deadX) {
     for (let s = 0; s < 5; s++) { const w = cp(lane, s); WL.owner[w] = breaker; WL.prog[w] = breaker === 0 ? 1 : -1; }
-    fillSurge(breaker, 2500);
+    addSurge(breaker, 2500);   // whole, even mid-surge (the meter's hold is fillSurge's)
     evSure({ t: 'laneBreak', lane, team: breaker, from: GATE_X[breaker], to: deadX });
     updateFront(lane);
   }
@@ -680,13 +694,50 @@ export function createSim(opts = {}) {
   }
 
   // ---- movement
-  // the neighbours of a body, both sides in the grid's order, the first ten: the push off each one it overlaps and, for its own battalion's
-  // bodies among them, the sum of their positions (a swarm's cohesion reads the local centroid). Left in sx, sy, gx, gy, gn.
+  // THE PUSH of a body (separate): off every body it overlaps, both sides, walked on the contact grid in its order, the first ten. Left in sx, sy.
+  // Walked on the main grid, the ten were the first ten bodies of the box's big cells, overlapping or not, and in a crowd at a stronghold a
+  // mote never met the motes it stood on: the swarm's cohesion fused them onto one bit-identical point (the captains' seed 3: 21 motes on one
+  // point at 120 s and 150 s, drawn as one shape). Two bodies on the very same point have no direction between them, so they part along a
+  // fixed direction drawn from their two indices, each its own way - the pair always parts, and a replay parts it the same.
+  // THE FLOCK (SIM's ruling 2026-09-25, on the judge's measure): a swarm body shoulders the swarm bodies of its own battalion at FLOCK of the full
+  // push, so a cloud flies tight - touching, never stacked (a coincident pair still parts whole). At the full push the parted cloud stood a third
+  // wider than it did when the judge baked its table: more of the enemy reached it at once, BLOOM LINE against NULL FIELD fell from +0.76 to -0.01,
+  // and ● against ◯ from +0.20 to +0.11, under the +0.15 its cards promise. At a tenth the table holds again as baked.
   let sx = 0, sy = 0, gx = 0, gy = 0, gn = 0;
+  const PUSHES = 10, COINCIDENT2 = 0.01, FLOCK = 0.1;
   function separate(i, r) {
+    const x = U.x[i], y = U.y[i], reach = r * 2 + 8, c = contact.cell, start = contact.start, items = contact.items, cols = contact.cols;
+    const cx0 = Math.max(0, ((x - reach) / c) | 0), cx1 = Math.min(cols - 1, ((x + reach) / c) | 0);
+    const cy0 = Math.max(0, ((y - reach) / c) | 0), cy1 = Math.min(contact.rows - 1, ((y + reach) / c) | 0);
+    const flock = K.move[U.kind[i]] === SWARM ? U.grp[i] : -1;   // a swarm body's own cloud; −1 for every other walk, which no grp matches
+    sx = 0; sy = 0;
+    let pushes = 0;
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0, k = cy * cols + cx; cx <= cx1; cx++, k++) {
+        for (let q = start[k], e = start[k + 1]; q < e; q++) {
+          const j = items[q];
+          if (j === i || !U.alive[j]) continue;
+          const dx = x - U.x[j], dy = y - U.y[j], d2 = dx * dx + dy * dy, m = r + K.r[U.kind[j]];
+          if (d2 >= m * m) continue;
+          if (d2 <= COINCIDENT2) partCoincident(i, j, m);
+          else { const d = Math.sqrt(d2), p = (m - d) / d * (U.grp[j] === flock && K.move[U.kind[j]] === SWARM ? FLOCK : 1); sx += dx * p; sy += dy * p; }
+          if (++pushes >= PUSHES) return;
+        }
+      }
+    }
+  }
+  // body i's share of parting from j on the same point: the full overlap m along the pair's own direction (the golden angle of the lower
+  // index plus the higher), i one way and j, when it pushes, the other
+  function partCoincident(i, j, m) {
+    const lo = i < j ? i : j, hi = i < j ? j : i, a = (lo * 2.399963 + hi) % 6.283185, s = i < j ? m : -m;
+    sx += Math.cos(a) * s; sy += Math.sin(a) * s;
+  }
+  // THE COHESION of a swarm: the first ten bodies of the box's cells on the main grid, both sides in its order, and the sum of the positions of
+  // its own battalion's among them - the local centroid it closes on. Left in gx, gy, gn.
+  function cohere(i, r) {
     const x = U.x[i], y = U.y[i], team = U.team[i], grp = U.grp[i];
     const start = grid.start, items = grid.items, cols = grid.cols;
-    sx = 0; sy = 0; gx = 0; gy = 0; gn = 0;
+    gx = 0; gy = 0; gn = 0;
     let seen = 0;
     box(x, y, r * 2 + 8);
     for (let cy = by0; cy <= by1; cy++) {
@@ -694,9 +745,7 @@ export function createSim(opts = {}) {
         for (let q = start[k], e = start[k + 1]; q < e; q++) {
           const j = items[q];
           if (j === i || !U.alive[j]) continue;
-          const dx = x - U.x[j], dy = y - U.y[j], d2 = dx * dx + dy * dy, m = r + K.r[U.kind[j]];
           if (U.team[j] === team && U.grp[j] === grp) { gx += U.x[j]; gy += U.y[j]; gn++; }
-          if (d2 < m * m && d2 > 0.01) { const d = Math.sqrt(d2), p = (m - d) / d; sx += dx * p; sy += dy * p; }
           if (++seen >= 10) return;
         }
       }
@@ -726,14 +775,14 @@ export function createSim(opts = {}) {
     }
     if (has) { dx = tx - U.x[i]; dy = ty - U.y[i]; dist = Math.sqrt(dx * dx + dy * dy) || 1; dx /= dist; dy /= dist; }
     const spd = K.speed[kind] * (sg && shape === 0 ? 1.4 : 1) * (hurry ? o.march : 1), age = U.age[i], ph = U.ph[i];   // OVERDRIVE: a surging orb runs faster
-    separate(i, r);   // the neighbours first: this body's own scan, since a swarm's cohesion reads the centroid it leaves
+    separate(i, r);   // the push and a swarm's centroid are read before the body moves: the centroid is the one it leaves
     let wx = 0, wy = 0;
     const far = has && dist > stop;
     switch (K.move[kind]) {
       case MARCH: if (far) { wx = dx * spd; wy = dy * spd; } break;   // a holder walks to its point and stands; the march machine sends it on
       case ZIGZAG: if (far) { const s = Math.sin(age * 5 + ph) * 0.7; wx = (dx - dy * s) * spd; wy = (dy + dx * s) * spd; } break;
       case ORBIT: if (has) { if (dist > stop * 1.05) { wx = dx * spd; wy = dy * spd; } else if (U.target[i] !== -1) { const s = ph > 3.14 ? 1 : -1; wx = -dy * s * spd * 0.8 + dx * (dist - stop * 0.8) * 2; wy = dx * s * spd * 0.8 + dy * (dist - stop * 0.8) * 2; } } break;
-      case SWARM: if (far) { wx = dx * spd; wy = dy * spd; } if (gn) { const gx2 = gx / gn - U.x[i], gy2 = gy / gn - U.y[i]; wx += gx2 * 0.8; wy += gy2 * 0.8; } break;
+      case SWARM: if (far) { wx = dx * spd; wy = dy * spd; } cohere(i, r); if (gn) { const gx2 = gx / gn - U.x[i], gy2 = gy / gn - U.y[i]; wx += gx2 * 0.8; wy += gy2 * 0.8; } break;
       case HOP: if (far) { const g = Math.sin(age * 3.2 + ph) > 0.1 ? 2.2 : 0; wx = dx * spd * g; wy = dy * spd * g; } break;
       case PHASE: if (far) { wx = dx * spd * 0.6; wy = dy * spd * 0.6; if (U.cd[i] < -2.6 && dist > 300) { const jump = Math.min(240, dist - stop * 0.7); ev({ t: 'blink', x: U.x[i], y: U.y[i], x2: U.x[i] + dx * jump, y2: U.y[i] + dy * jump, team }); U.x[i] += dx * jump; U.y[i] += dy * jump; U.cd[i] = 0.2; } } break;
     }
@@ -898,7 +947,7 @@ export function createSim(opts = {}) {
       }
       const dmg = w.dmg * P.mul[s];
       // BARRAGE: a surging hex's splash is half again, read where the missile lands (a shot carries no lane of its own)
-      const splash = w.type === 'missile' ? w.splash * (k.shape === 3 && S.surgeUntil[team] > S.time && S.surgeLane[team] === laneOf(P.y[s]) ? 1.5 : 1) : 0;
+      const splash = w.type === 'missile' ? w.splash * (k.shape === 3 && surgeLive(team) && S.surgeLane[team] === laneOf(P.y[s]) ? 1.5 : 1) : 0;
       const steps = (w.speed || 0) * dt > 24 ? 2 : 1; let hit = false, hx = 0, hy = 0;
       for (let q = 0; q < steps && !hit; q++) {
         P.x[s] += P.vx[s] * dt / steps; P.y[s] += P.vy[s] * dt / steps;
@@ -991,7 +1040,7 @@ export function createSim(opts = {}) {
     }
     const slot = S.tick % KILL_SPAN;
     for (let l = 0; l < 3; l++) { const ring = S.killsRing.slots[l]; S.killsRing.sum[l] -= ring[slot]; ring[slot] = 0; }
-    grid.build(U.x, U.y, U.alive, U.hi); gridHi = U.hi; splitSides(); slack.fill(0); rowSlack.fill(0);
+    grid.build(U.x, U.y, U.alive, U.hi); contact.build(U.x, U.y, U.alive, U.hi); gridHi = U.hi; splitSides(); slack.fill(0); rowSlack.fill(0);
     readVanguards();
     const hi = U.hi, tick = S.tick;
     for (let i = 0; i < hi; i++) {

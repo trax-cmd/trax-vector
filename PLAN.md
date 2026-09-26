@@ -586,3 +586,78 @@ the headless numbers printed, no page error. Nothing is claimed that the probe d
     seconds (3.0-3.3 s → 1.1 s). The fourth round's critic could not run (the account's credits
     ran out, twice), so round 3's repairs stand on the road and the proof line above, not on a critic's
     verdict.
+  - **The second repair loop, rounds one to four** (same day, evening; a spec critic and a player critic
+    each round, the owners repairing between). Round 1: spec FAIL on one major finding. Every probe check
+    was green on the three glasses, the proof line GREEN, headless 1.05 s, THE TABLE HOLDS. But the wave
+    plate ran across the phone's minimap: every wave plate and the lane-break plate covered it by 70 to
+    143 px, and the longest was cut by the 94vw cap. Five polish items came with it: the drag's lane word
+    on the snapped ring, the gold snap ring through the 2× label, `LODESTONE RI…` on the phone and
+    portrait cards, red LOSES rings through the hold banner's pane, the surge bar's end over `82%`.
+    The player critic (his six complaints, judged on real matches he did not stage: two captains playing
+    seed 3 on three glasses, and a drag of his own) read round 1 as A FAIL, B FAIL, C PASS, D PASS, E FAIL,
+    F FAIL. The blocker: the camera never looked at the keeps, so from about 90 s the glass showed an empty
+    lane end while hundreds fought 620 wu off the lane line (0 of 634 bodies on the phone at 180 s); a hold
+    followed by a drag was refused by the banner's cancel zone; every surge brought the glow back (gold
+    rings merging into haze, additive trails summing to white). Repairs: the camera follows a broken lane's
+    fight into the yard and cuts to a shatter on its frame; the banner and plate judge by the aim; the
+    surge mark is one opaque 1 px gold line and field lines blend premultiplied, not additive.
+    Round 2: spec FAIL on the probe's stale bell check only (the coach word now pins '◀ PUSH · C' with an
+    arrow and the lane); player A and F FAIL, B C D E PASS: stale trail threads flashing across the field
+    after a muster, tower-hit sparks piling into a glowing ball in every besieged keep, a decided war
+    circling a keep whose arc did not move for 2.5 minutes (keepWall 0.002), the tapped surge landing off
+    the glass. Repairs: the trail ring re-seats a recycled slot; the tower-hit sparks are gone; THE OPEN
+    KEEPS (a keep takes small arms at keepOpen 0.02 once its side's three gates are down: a decided war ends
+    30-60 s after its last gate); the surge tap picks the lane with his bodies and the camera follows it.
+    The designer's ruling that round: the proof line's length row read 'past 240 s' and its greens came
+    from the frozen keeps, so it reads 'a match past 150 s' (matches now 164-475 s).
+    Round 3: spec FAIL on a flaky probe classifier (a 1.5 px outline between pixel centres read as glow at
+    dpr 1); player B and F FAIL: 135 bodies drew as 16 shapes (separate() gave up after ten scanned and
+    never parted coincident bodies, so swarms fused onto points), and no war of hundreds (see the rout).
+    Repairs: the classifier reads the outline's ramp; THE CONTACT GRID and partCoincident part every
+    stacked pair (0 shared points at 60-250 s); timeline prints THE WAR.
+    Round 4: spec FAIL on drift from the parting (● vs ◯ fell to +0.11, quiet gaps 8.3-10.8 s from armies
+    massed in different lanes, a false stall from a centroid over whoever lived); player B FAIL only, on
+    the camera parking on his idle keep and a wave pulling it off a live siege (both sides on the glass
+    18 % of a match). Repairs: THE FLOCK (a swarm body pushes its own battalion at 0.1: a cloud flies
+    tight, never stacked) put the table back; the captain answers a walk-in; the stall reads members, not
+    a centroid; the camera never parks on an empty keep and a wave does not pull off a busy lane (empty
+    glass in 5 of 353 samples, was 130); the surge meter holds during its own surge. Findings were fixed
+    after round 4 without a fifth critic; the gate below measured them.
+  - **The gate after round four** (the final bytes, one run at a time, 2026-09-25 evening):
+    `node --check` on all 28 files under `src/` and `tools/`, none failed. The judge: THE TABLE HOLDS at
+    the baked prices (27 s; role strength ● +0.01 ■ +0.18 ▲ +0.03 ⬢ −0.05 ◯ −0.07 ◆ −0.10; the answer to
+    ◆ is ▲ +0.28, ■ +0.27, ● +0.16). The yardstick misses one temper, twice alike (it is deterministic):
+    EASY 8-0 holds (mean 231 s), NORMAL 5-3 holds (243 s), but **HARD 3-5 misses**, since it wants 0-2 and
+    the player wins seeds 1, 4 and 7 (mean 274 s). The proof line: GREEN (30 s). Against the coached
+    player: first death 7.0-9.6 s, contest 9.3-19.2, front 4.5-4.7, gate hit 29.7-108.2, both meters
+    full first 7 of 8, both fired 8 of 8, a shatter 8 of 8 (36.6-142.8 s), longest quiet 3.7 s, 0
+    stalls, matches 162-354 s (the player 5, the captain 3), peaks 506-1,157. The row now reads "a match
+    past 150 s", where it read 240 s above. Captain against captain: first death 6.4-7.3 s, contest
+    6.2-7.8, front 4.3-4.5, gate hit 22.3-86.5, meters full first 8 of 8, fired 8 of 8, shatter 8 of 8
+    (41.8-129.6 s), longest quiet 5.1 s, matches 160-291 s (west 6, east 2), peaks 578-1,461. A 4× rout
+    for most of the match in 7 of 8 and 8 of 8. Replay byte-equal on seed 1. The mirror: west 3, east 3
+    (seed 3 by the clock at 480 s). Headless: west by strongholds at 160 s, 4,809 ticks in 1.0 s, 0.22 ms
+    a tick (2.8 worst), 801 at the peak, 154× real time. The road: every check green on all three
+    glasses. Phone 41 s: 21 blobs (west 11, east 10), 5 tracers, 0 glow, seams 67/80. Portrait 37 s:
+    18 blobs, 8 tracers, seams 70/74. Desk 50 s: 23 blobs, 5 tracers. On all three: 60 fps at 12 s and
+    across the shatter, every budget read and none off (27/27/28), and `BROKEN` at +1,849-1,867 ms.
+    Frames viewed: the phone's wave plate now ends at about x 654, left of the minimap at 676;
+    `LODESTONE RING` prints whole; the 2× stands clear of the ring. **The wire probe went red, twice
+    alike**, on 9 checks, each a 404 `no`. The cause is outside the code: a second `tools/serve.js`
+    (a static copy of the house, started 20:35) holds the relay's port 8898, so the probe takes it for
+    the relay and never starts its own. A scratch copy of the probe pointed at port 8899 passed all
+    17 checks. It posted the documented deploy (200), mustered five bodies into lane 1, fired a surge
+    through the wire, and got a snapshot back at tick 180. Left open: HARD, and the port.
+  - **The close** (the designer, same night): both open items shut and one more bug found. HARD re-seated at incomeM
+    1.13 (1.05 read 3-5, 1.10 4-4, 1.12 3-5, 1.13 1-7, 1.14 and 1.15 0-8: a knife edge, one step of income flipping
+    whole matches - the rout again); the three tempers hold, EASY 8-0, NORMAL 5-3, HARD 1-7. The stray serve.js on
+    8898 was stopped and the wire probe as shipped went green. THE WAVE WAITS (announce.js): in about half the
+    portrait runs the captain announced WAVE 2 in the seconds his own gate fell, and a full queue of shatter and
+    lane plates popped it - the wave arrived unannounced and its alarm never sounded (the captain's own state read
+    waves 2, pending none). A wave plate is an order to answer, so a full queue never drops it; it reads a second
+    or two late instead. The probe's minimap drop counts the bodies its muster bore, the dead included (a drop into
+    a lane whose gate fell musters at a keep an army is camped on). Then, one run at a time: portrait green in 7 of
+    8 (the eighth a slow-machine timing read), phone and desk green, the timeline GREEN, THE TABLE HOLDS, headless
+    1.0 s. A late two-captain match fast-forwarded on the phone glass puts 200-237 bodies of the siege on the glass
+    at 120-150 s where round one saw none. What is left is design, not repair: THE WAR reads a 4× rout for most
+    of the match in 7 of 8 and 8 of 8 - the next version's work, a comeback so both armies stay big.

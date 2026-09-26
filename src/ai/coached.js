@@ -40,7 +40,7 @@ export function createCoached(sim, team, opts = {}) {
       if (!afford(price, energy)) break;
       cmds.push({ op: 'deploy', team, batt: card, lane: a.lane, x: a.x });
       energy -= price;
-      card = pickCard(sim, deck, a.answers, energy);
+      card = pickCard(sim, deck, a.answers, energy, a.breaker);
     }
     return cmds;
   }

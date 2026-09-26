@@ -107,20 +107,65 @@ function probeInPage() {
   }
   const near = (r, g, b, c, tol) => Math.abs(r - c[0]) <= tol && Math.abs(g - c[1]) <= tol && Math.abs(b - c[2]) <= tol;
   // the field's own lines (§2.1): the band edges #232C48, the 1,000 grid #1C2440, the centre line #202848 - lit past 40 by Rec. 709
-  // luma (44, 36, 41), so they are named dark by colour; every other field colour is under 32
+  // luma (44, 36, 41), so they are named dark by colour. A held checkpoint's RALLY disc (its owner's fill at 0.25, luma 36-58) is
+  // not: it is the fill a halo is made of, so it is left lit and read as what it is - a disc its checkpoint's ring encloses
   const FIELD = [[35, 44, 72], [28, 36, 64], [32, 40, 72]];
-  // every pixel classed: 0 dark, 1/2 a side's fill, 3/4 a side's edge, 5 white, 6 other bright
+  const mix = (a, c, k) => a.map((v, j) => v + k * (c[j] - v));
+  // THE OUTLINE'S RAMP (§2.4): a 1.5 px outline between two pixel centres lights each at ~0.67 of the edge colour over what lies under
+  // it - the seam's dark outside, the body's own fill inside (fillA 0.20-0.55 of the fill over the ground) - so an edge pixel is one on
+  // the segment from any of those toward a side's edge colour, at a share of half or more. The whole outline reads as a wall then, and a
+  // body is what it encloses; the pure-colour test it replaces found no outline on a 14 px BLOCK and read the whole body as a glow
+  const UNDERS = BASES.flatMap((base) => [base, ...FILL.flatMap((fill) => [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6].map((k) => mix(base, fill, k)))]);
+  // the share a ≥ lo of a side's edge colour over any of `unders` that the pixel is, within tol per channel; the best share or -1
+  function edgeShare(r, g, b, edge, unders, lo, tol) {
+    let best = -1;
+    for (const u of unders) {
+      const dx = edge[0] - u[0], dy = edge[1] - u[1], dz = edge[2] - u[2];
+      const a = ((r - u[0]) * dx + (g - u[1]) * dy + (b - u[2]) * dz) / (dx * dx + dy * dy + dz * dz);
+      if (a < lo || a > 1.05 || a <= best) continue;
+      if (Math.abs(r - u[0] - a * dx) > tol || Math.abs(g - u[1] - a * dy) > tol || Math.abs(b - u[2] - a * dz) > tol) continue;
+      best = a;
+    }
+    return best;
+  }
+  // one pixel's class: 0 dark, 1/2 a side's fill, 3/4 a side's edge, 5 white, 6 other bright, 7 FAINT - a side's edge colour at
+  // under half over the ground: a fading death ring, a trail's tail. Named before the fills, which it would otherwise pass for: the
+  // west's edge at 0.17 over the band (33,56,71) reads as the west's fill over the east's tinted segment within 9 per channel
+  function classOf(r, g, b) {
+    if (luma(r, g, b) <= 40 || FIELD.some((c) => near(r, g, b, c, 6))) return 0;
+    if (r >= 200 && g >= 200 && b >= 200) return 5;
+    for (let t = 0; t < 2; t++) if (near(r, g, b, EDGE[t], 40) || edgeShare(r, g, b, EDGE[t], UNDERS, 0.5, 14) >= 0) return 3 + t;
+    for (let t = 0; t < 2; t++) if (edgeShare(r, g, b, EDGE[t], BASES, 0.04, 6) >= 0) return 7;
+    for (let t = 0; t < 2; t++) if (fillShare(r, g, b, FILL[t], 12) >= 0) return 1 + t;
+    return 6;
+  }
+  // A held checkpoint's RALLY disc (§2.9: its owner's fill at 0.25, luma 36-58 - the east's on its drawn segment tint reads 77,30,33)
+  // is the field's own paint in a body's colour, and it is the colour a halo is made of too, so it is named dark only where it is
+  // painted: inside a held point's disc, in its owner's rally colour over any ground - the grounds and FIELD_FS's segment tints,
+  // the band mixed 12 % toward a side's fill (§2.8), which read a little off the spec's hex. Left lit, a disc the rect's edge cuts
+  // is reached from inside its ring and reads as a glow.
+  const RALLY = FILL.map((fill) => [...BASES, ...FILL.map((f) => mix(BASES[0], f, 0.12))].map((base) => mix(base, fill, 0.25)));
+  function darkenRallies(img, cls, at) {
+    const v = V(), WL = v.sim.WL, dpr = img.dpr || 1, w = img.width, h = img.height;
+    for (let q = 0; q < WL.n; q++) {
+      const o = WL.owner[q];
+      if (o < 0) continue;
+      const [sx, sy] = v.R.toScreen(v.view, WL.x[q], WL.y[q]), cx = (sx - at.x) * dpr, cy = (sy - at.y) * dpr;
+      const rad = (70 * (WL.slot[q] === 2 ? 1.3 : 1) * v.view.zoom + 2) * dpr;   // lanes.js CP_R, THE CENTRE drawn 1.3x
+      for (let y = Math.max(0, Math.floor(cy - rad)); y < Math.min(h, cy + rad); y++) for (let x = Math.max(0, Math.floor(cx - rad)); x < Math.min(w, cx + rad); x++) {
+        const p = y * w + x;
+        if ((cls[p] === 1 || cls[p] === 2) && Math.hypot(x - cx, y - cy) <= rad && RALLY[o].some((c) => near(img[p * 4], img[p * 4 + 1], img[p * 4 + 2], c, 8))) cls[p] = 0;
+      }
+    }
+  }
+  // every pixel classed, each distinct colour once (a frame repeats its colours by the thousand)
   function classify(img) {
-    const n = img.width * img.height, cls = new Uint8Array(n);
+    const n = img.width * img.height, cls = new Uint8Array(n), seen = new Map();
     for (let p = 0; p < n; p++) {
-      const r = img[p * 4], g = img[p * 4 + 1], b = img[p * 4 + 2];
-      if (luma(r, g, b) <= 40 || FIELD.some((c) => near(r, g, b, c, 6))) continue;
-      if (r >= 200 && g >= 200 && b >= 200) { cls[p] = 5; continue; }
-      if (near(r, g, b, EDGE[0], 40)) { cls[p] = 3; continue; }
-      if (near(r, g, b, EDGE[1], 40)) { cls[p] = 4; continue; }
-      if (fillShare(r, g, b, FILL[0], 12) >= 0) { cls[p] = 1; continue; }
-      if (fillShare(r, g, b, FILL[1], 12) >= 0) { cls[p] = 2; continue; }
-      cls[p] = 6;
+      const key = (img[p * 4] << 16) | (img[p * 4 + 1] << 8) | img[p * 4 + 2];
+      let c = seen.get(key);
+      if (c === undefined) { c = classOf(img[p * 4], img[p * 4 + 1], img[p * 4 + 2]); seen.set(key, c); }
+      cls[p] = c;
     }
     return cls;
   }
@@ -130,7 +175,7 @@ function probeInPage() {
     let next = 0;
     for (let s = 0; s < w * h; s++) {
       if (!mask[s] || labels[s]) continue;
-      const c = { area: 0, x0: w, y0: h, x1: 0, y1: 0, votes: [0, 0, 0, 0, 0, 0, 0] };
+      const c = { area: 0, x0: w, y0: h, x1: 0, y1: 0, votes: [0, 0, 0, 0, 0, 0, 0, 0] };
       let top = 0; stack[top++] = s; labels[s] = ++next;
       while (top) {
         const p = stack[--top], x = p % w, y = (p - x) / w;
@@ -153,22 +198,46 @@ function probeInPage() {
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { if (!a[y * w + x]) continue; for (let d = -k; d <= k; d++) { const q = y + d; if (q >= 0 && q < h) b[q * w + x] = 1; } }
     return b;
   }
-  // the pixels reachable from the image's border without crossing a wall pixel (4-connected, so a thin diagonal outline still holds)
-  function outsideOf(wall, w, h) {
+  // a mask shrunk by k px (the pixels whose whole (2k+1)-square is in it), separably with running counts
+  function erode(mask, w, h, k) {
+    const a = new Uint8Array(w * h), b = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      let run = 0;
+      for (let x = 0; x < w + k; x++) {
+        if (x < w) run += mask[y * w + x] ? 1 : 0;
+        if (x - 2 * k - 1 >= 0) run -= mask[y * w + x - 2 * k - 1] ? 1 : 0;
+        const c = x - k; if (c >= k && c < w - k && run === 2 * k + 1) a[y * w + c] = 1;
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      let run = 0;
+      for (let y = 0; y < h + k; y++) {
+        if (y < h) run += a[y * w + x];
+        if (y - 2 * k - 1 >= 0) run -= a[(y - 2 * k - 1) * w + x];
+        const c = y - k; if (c >= k && c < h - k && run === 2 * k + 1) b[c * w + x] = 1;
+      }
+    }
+    return b;
+  }
+  // the pixels reachable from the image's dark border without crossing a wall pixel (4-connected, so a thin diagonal outline still
+  // holds). Only a dark border pixel seeds: a body the rect's edge cuts is enclosed by its outline and the edge, not open to the world
+  function outsideOf(wall, cls, w, h) {
     const out = new Uint8Array(w * h), stack = new Int32Array(w * h);
     let top = 0;
-    const seed = (p) => { if (!wall[p] && !out[p]) { out[p] = 1; stack[top++] = p; } };
+    const flood = (p) => { if (!wall[p] && !out[p]) { out[p] = 1; stack[top++] = p; } };
+    const seed = (p) => { if (cls[p] === 0) flood(p); };
     for (let x = 0; x < w; x++) { seed(x); seed((h - 1) * w + x); }
     for (let y = 0; y < h; y++) { seed(y * w); seed(y * w + w - 1); }
     while (top) {
       const p = stack[--top], x = p % w;
-      if (x > 0) seed(p - 1); if (x < w - 1) seed(p + 1); if (p >= w) seed(p - w); if (p < (h - 1) * w) seed(p + w);
+      if (x > 0) flood(p - 1); if (x < w - 1) flood(p + 1); if (p >= w) flood(p - w); if (p < (h - 1) * w) flood(p + w);
     }
     return out;
   }
-  // THE BATTLE FRAME's measures (§11.2 item 13) over a readback of the field rect
-  function analyse(img) {
+  // THE BATTLE FRAME's measures (§11.2 item 13) over a readback of the field rect whose top-left is `at` in css px
+  function analyse(img, at) {
     const w = img.width, h = img.height, dpr = img.dpr || 1, cls = classify(img), n = w * h;
+    darkenRallies(img, cls, at);
     const body = new Uint8Array(n), white = new Uint8Array(n), outline = new Uint8Array(n);
     for (let p = 0; p < n; p++) { if (cls[p] >= 1 && cls[p] <= 4) body[p] = 1; if (cls[p] === 5) white[p] = 1; if (cls[p] >= 3 && cls[p] <= 5) outline[p] = 1; }
     // a blob is a body (or a formation of touching bodies) when it holds fill pixels: the front bars and rings are edge colour only
@@ -178,13 +247,22 @@ function probeInPage() {
     const thinner = (c, k) => c.area <= (k * dpr + 1) * Math.hypot(c.w, c.h) + 40 * dpr;
     const streaks = components(white, cls, w, h).filter((c) => Math.hypot(c.w, c.h) / dpr >= 12 && thinner(c, 2.5));   // a white line ≥ 12 css px long, any direction
     // THE NO-GLOW TEST: a body is what its outline encloses. Anything lit that the border can reach without crossing an outline,
-    // more than 3 css px from one, must be a line, a ring or a spark - thin, hollow or tiny; a halo in the fill colour is none of those.
-    const outside = outsideOf(outline, w, h), near = dilate(outline, w, h, Math.round(3 * dpr)), bright = new Uint8Array(n);
-    for (let p = 0; p < n; p++) if (cls[p] && outside[p] && !near[p]) bright[p] = 1;
+    // more than 3 css px from one, must be a line, a ring or a spark. The outlines are closed by a pixel first: where two bodies of a
+    // side touch, one's seam darkens the other's outline for a pixel or two, and that gap must not open a body to the world.
+    // What is left is told by its thickness, read as a CORE - what survives a shrink by a square - in the colour it is lit in:
+    //   a side's FILL colour outside a body is a halo's (§2.4: a body's fill; lines, rings and sparks are drawn in edge colours,
+    //     white and gold), and its one lawful stroke is a held point's 1 px line to its gate (§2.6), so a square of 1.5 css px;
+    //   any other colour is a stroke's, 2 css px at the widest and a pixel more each side antialiased, and a volley tangles its
+    //     death rings, so a square of 5 css px: a tangle of rings has a bounding box as full as a halo's, but no core.
+    // A spark is tiny and never a glow.
+    const outside = outsideOf(dilate(outline, w, h, Math.max(1, Math.round(dpr / 2))), cls, w, h), near = dilate(outline, w, h, Math.round(3 * dpr));
+    const bright = new Uint8Array(n), fillLit = new Uint8Array(n), kind = new Uint8Array(n);
+    for (let p = 0; p < n; p++) if (cls[p] && outside[p] && !near[p]) { bright[p] = 1; if (cls[p] === 1 || cls[p] === 2) fillLit[p] = 1; }
+    const fillCore = erode(fillLit, w, h, Math.max(1, Math.round(dpr / 2))), strokeCore = erode(bright, w, h, Math.round(2.5 * dpr));
+    for (let p = 0; p < n; p++) kind[p] = fillCore[p] || strokeCore[p] ? 1 : 0;
     let glowPx = 0, worst = null;
-    for (const c of components(bright, cls, w, h)) {
-      const thin = thinner(c, 3), hollow = Math.min(c.w, c.h) >= 8 * dpr && c.area <= 0.3 * c.w * c.h, tiny = c.area <= 6 * dpr * dpr;
-      if (thin || hollow || tiny) continue;
+    for (const c of components(bright, kind, w, h)) {   // each component votes over the cores: votes[1] is its pixels in either
+      if (c.area <= 6 * dpr * dpr || c.votes[1] === 0) continue;
       glowPx += c.area;
       if (!worst || c.area > worst.area) worst = { x: Math.round(c.cx / dpr), y: Math.round(c.cy / dpr), w: Math.round(c.w / dpr), h: Math.round(c.h / dpr), area: c.area };
     }
@@ -256,6 +334,9 @@ function probeInPage() {
   // recycled into (a set of live slots misses a battalion born into a volley's dead ones) and whatever an earlier order's hive bore meanwhile
   const grpMark = () => ev(() => window.VECTOR.sim.S.grpN);
   const bornSince = (mark) => ev((g0) => { const U = window.VECTOR.sim.U, out = []; for (let i = 0; i < U.hi; i++) if (U.alive[i] && U.team[i] === 0 && U.grp[i] >= g0) out.push({ i, lane: U.lane[i], goalX: U.goalX[i] }); return out; }, mark);
+  // every west body a muster bore since the mark, the dead included: a slot keeps its team, group and lane until a later muster
+  // takes it, and in the probe's short waits the west's only musters are the probe's own - so a battalion killed on arrival still counts
+  const bornEver = (mark) => ev((g0) => { const U = window.VECTOR.sim.U, out = []; for (let i = 0; i < U.hi; i++) if (U.team[i] === 0 && U.grp[i] >= g0) out.push({ i, lane: U.lane[i], alive: !!U.alive[i] }); return out; }, mark);
   const setEnergy = (v) => ev((q) => { window.VECTOR.sim.S.energy[0] = q; }, v);
   const goCard = () => ev(() => { const c = document.querySelector('.card.go') || document.querySelector('.card:not(.dim)') || document.querySelector('.card'); if (!c) return null; const r = c.getBoundingClientRect(); return { i: +c.dataset.i, id: c.dataset.k, x: r.x + r.width / 2, y: r.y + r.height / 2, go: c.classList.contains('go') }; });
   const fieldCentre = async () => { const r = await ev(() => window.VECTOR.view && window.VECTOR.view.rect); const q = r || { x: G.rect[0], y: G.rect[1], w: G.rect[2], h: G.rect[3] }; return { x: q.x + q.w / 2, y: q.y + q.h / 2, rect: q }; };
@@ -303,9 +384,14 @@ function probeInPage() {
   { const r = await ev(() => window.VECTOR.view && window.VECTOR.view.rect); measure('field rect', G.rect.join(','), r ? `${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.w)},${Math.round(r.h)}` : '—', 'rect'); }
 
   // ---- 2. THE BELL
+  // the coach's word (§2.9): the bare verb when its front bar is on the glass, else main.js pins it inside the rect with an arrow
+  // the way the bar lies and the lane's letter - '◀ PUSH · C', 'PUSH · C ▶', '▲ PUSH · C', '▼ PUSH · C'. At the bell the west's bar
+  // stands at 1,500, off every glass, so the pinned form is what the glass shows; either form must carry this verb and this lane
+  const coachSays = (text, verb, letter) => text === verb || new RegExp(`^(?:[◀▲▼] ${verb} · ${letter}|${verb} · ${letter} ▶)$`).test(text);
   {
     const bell = await ev(() => { const V = window.VECTOR, go = document.querySelector('.card.go'); const tag = go && go.querySelector('.tag'); const word = document.querySelector('.lbl.word'); const glow = go ? getComputedStyle(go).animationDuration : ''; return { go: !!go, tag: tag ? tag.textContent.trim() : '', tagShown: tag ? getComputedStyle(tag).display !== 'none' : false, word: word ? word.textContent.trim() : '', wordShown: word ? getComputedStyle(word).display !== 'none' : false, lane: V.state.advice && V.state.advice.lane, verb: V.state.advice && V.state.advice.verb, glow }; });
-    check(2, 'THE BELL', bell.go && bell.tag === 'GO' && bell.tagShown && bell.word === 'PUSH' && bell.wordShown && bell.lane === 1, `.card.go ${bell.go} · tag "${bell.tag}" · word "${bell.word}" · advice ${bell.verb} lane ${bell.lane}`);
+    const wordOk = coachSays(bell.word, 'PUSH', G.letters[1]);
+    check(2, 'THE BELL', bell.go && bell.tag === 'GO' && bell.tagShown && wordOk && bell.wordShown && bell.lane === 1, `.card.go ${bell.go} · tag "${bell.tag}" · word "${bell.word}" (wants PUSH, or pinned toward lane ${G.letters[1]}) · advice ${bell.verb} lane ${bell.lane}`);
     measure('coach glow 1,200', '1.2s', bell.glow || '—', 'css');
   }
 
@@ -344,7 +430,7 @@ function probeInPage() {
     if (GLASS !== 'desk') for (let k = 0; k < 6 && !(seamR && seamR.dark); k++) { const s = await ev(() => window.__probe.seam()); if (!seamR || (s.pair && (!seamR.pair || s.minLuma < seamR.minLuma))) seamR = s; if (!(seamR && seamR.dark)) await sleep(100); }
     const best = { blobs: 0 };
     for (let k = 0; k < 4; k++) {
-      const a = await ev(async (r) => window.__probe.analyse(await window.VECTOR.readback(r.x, r.y, r.w, r.h)), (await fieldCentre()).rect);
+      const a = await ev(async (r) => window.__probe.analyse(await window.VECTOR.readback(r.x, r.y, r.w, r.h), r), (await fieldCentre()).rect);
       if (a.streaks > (best.streaks || 0) || !best.w) Object.assign(best, a);
       if (a.streaks && a.west && a.east) break;
       await sleep(120);
@@ -372,12 +458,12 @@ function probeInPage() {
     await drag({ x: card.x, y: card.y }, c, async () => { at20 = await ev(() => ({ phase: window.VECTOR.state.drag && window.VECTOR.state.drag.phase, held: !!document.querySelector('#hand.held, .card.held') })); });
     await sleep(250);
     const mid = await ev(() => { const V = window.VECTOR, d = V.state.drag, lane = document.querySelector('.lbl.lane'), chip = [...document.querySelectorAll('.lbl.chip')].find((e) => getComputedStyle(e).display !== 'none' && /CENTRE/.test(e.textContent)); return { phase: d && d.phase, lane: d && d.lane, snap: d && d.snap && { kind: d.snap.kind, x: d.snap.x }, laneWord: lane && getComputedStyle(lane).display !== 'none' ? lane.textContent.trim() : '', chip: chip ? chip.textContent.trim() : '', held: !!document.querySelector('#hand.held, .card.held'), slideAt: d && d.slideFrom && d.slideFrom.at, gx: d && d.gx }; });
-    await shot(2, 'drag');
+    if (!G.ctx.hasTouch) await shot(2, 'drag');   // a phone's frame is the touch drag's, below: its ghost rides above the finger
     const chipPoint = /THE CENTRE/.test(mid.chip) ? 4500 : (mid.chip.match(/POINT (\d)/) ? CP_X[+mid.chip.match(/POINT (\d)/)[1] - 1] : NaN);
     await arm('flash', '!!document.querySelector(".card.flash")', 1500);
     await arm('flashOff', '(() => { const P = window.__probe; return P.marks.flash > 0 && !document.querySelector(".card.flash"); })()', 2500);
-    await arm('orderChip', '[...document.querySelectorAll(".lbl.chip")].some((e) => /→ CENTRE/.test(e.textContent) && getComputedStyle(e).display !== "none")', 1500);
-    await arm('orderChipGone', '(() => { const P = window.__probe; return P.marks.orderChip > 0 && ![...document.querySelectorAll(".lbl.chip")].some((e) => /→ CENTRE/.test(e.textContent) && getComputedStyle(e).display !== "none"); })()', 3000);
+    await arm('orderChip', '[...document.querySelectorAll(".lbl.chip")].some((e) => /→\\sCENTRE/.test(e.textContent) && getComputedStyle(e).display !== "none")', 1500);
+    await arm('orderChipGone', '(() => { const P = window.__probe; return P.marks.orderChip > 0 && ![...document.querySelectorAll(".lbl.chip")].some((e) => /→\\sCENTRE/.test(e.textContent) && getComputedStyle(e).display !== "none"); })()', 3000);
     await arm('flight', '!V.state.drag', 2500);
     await arm('lightOff', 'V.view && V.view.lanes && (V.view.lanes[1].fxTeam !== V.state.team || V.view.lanes[1].fxAmt <= 0.005)', 3000);
     await p.mouse.up();
@@ -399,7 +485,8 @@ function probeInPage() {
     measure('drop return flight 220', 220, flightAt > 0 && upAt > 0 ? Math.round(flightAt - upAt) : -1);
     measure('card flash 120', 120, flashOff > 0 && flashAt > 0 ? Math.round(flashOff - flashAt) : -1);
     measure('destination chip 1,200', 1200, chipGone > 0 && chipMs >= 0 ? Math.round(chipGone - chipMs) : -1);
-    // the same drag by a real touch on the phone glasses: the aim rides 48 px above the finger, so the finger stops 48 px lower
+    // the same drag by a real touch on the phone glasses: the aim rides 48 px above the finger, so the finger stops 48 px lower. Frame 2
+    // is taken here, the finger held on the glass (§11.3: the ghost as outlines above the finger), with the ghost's lift read off the drag
     if (G.ctx.hasTouch) {
       const cdp = await ctx.newCDPSession(p);
       const card2 = await goCard(), c2 = await fieldCentre(), before2 = await grpMark(), m2 = await musters();
@@ -407,7 +494,10 @@ function probeInPage() {
       await touch('touchStart', card2.x, card2.y);
       const tx = c2.x, ty = c2.y + 48;
       for (let k = 1; k <= 10; k++) { await touch('touchMove', card2.x + (tx - card2.x) * k / 10, card2.y + (ty - card2.y) * k / 10); await sleep(30); }
-      const tmid = await ev(() => { const d = window.VECTOR.state.drag; return { phase: d && d.phase, lane: d && d.lane, touch: d && d.touch }; });
+      await sleep(200);   // the ghost's 120 ms slide to its snap
+      const tmid = await ev(() => { const V = window.VECTOR, d = V.state.drag; if (!d) return {}; const [gx, gy] = V.R.toScreen(V.view, d.gx, d.gy); return { phase: d.phase, lane: d.lane, touch: d.touch, finger: [d.x, d.y].map(Math.round), aim: [d.ax, d.ay].map(Math.round), ghost: [gx, gy].map(Math.round) }; });
+      await shot(2, 'drag');
+      note(3, `frame 2 on the touch drag: finger ${tmid.finger} · aim ${tmid.aim} (${tmid.finger && tmid.aim ? tmid.finger[1] - tmid.aim[1] : '—'} px above the finger) · ghost ${tmid.ghost}`);
       await touch('touchEnd', tx, ty);
       await sleep(600);
       const born2 = await bornSince(before2), m3 = await musters();
@@ -550,9 +640,10 @@ function probeInPage() {
 
   // ---- 9. THE SHATTER: the east's centre gate at 1 hp, six darts carried to its far side - in the yard, 170 wu off its edge, where the
   // east's own musters (220 wu before the gate, in the run) are out of the darts' aggro and cannot draw their beams off the gate; the
-  // camera is pinned on the lane's end so the frame holds it
+  // camera looks at the gate itself, so the blast stands in the middle of the glass, below the plate on every glass (a look at x 7,400
+  // left portrait's gate at css y 127, the white disc and the fragments under the two-line plate)
   {
-    await ev(() => window.VECTOR.follow(1, 7400));
+    await ev(() => window.VECTOR.follow(1, 7900, 2500));
     await sleep(700);
     const surge0 = await ev(() => { const S = window.VECTOR.sim.S; S.surge[0] = 1000; return S.surge[0]; });
     await arm('shatter', 'V.sim.T.alive[6] === 0', 12000);
@@ -584,15 +675,18 @@ function probeInPage() {
 
   // ---- 10. THE WAVE: the captain's plate by name within 45 s, the alarm, the gold dot on the lane's arrow
   {
-    const WAVE = /WAVE \d+ · THE [A-Z ]+ · .* → (TOP|CENTRE|BOTTOM|LEFT|RIGHT)/;
+    // announce.js joins the glyphs, the arrow and the lane word with no-break spaces (the line never wraps between them): \s reads both
+    const WAVE = /WAVE \d+ · THE [A-Z ]+ · .*→\s(TOP|CENTRE|BOTTOM|LEFT|RIGHT)/;
     let wave = null;
     while (!wave && (await simTime()) < 45.5) { wave = await ev((src) => { const re = new RegExp(src); const q = window.__probe.plates.find((e) => re.test(e.text)); return q ? { text: q.text, time: q.time, coach: q.coach, followed: q.followed, at: q.at, off: q.off } : null; }, WAVE.source); if (!wave) await sleep(300); }
     if (wave && wave.coach === null) { await sleep(1600); wave = await ev((src) => { const re = new RegExp(src); const q = window.__probe.plates.find((e) => re.test(e.text)); return { text: q.text, time: q.time, coach: q.coach, followed: q.followed, at: q.at, off: q.off }; }, WAVE.source); }
     const alarm = await ev(() => { const g = window.VECTOR.sound && window.VECTOR.sound.gates; return !!(g && (g.has ? g.has('wave') : g.wave)); });
-    const laneIdx = wave ? { TOP: 0, CENTRE: 1, BOTTOM: 2, LEFT: 0, RIGHT: 2 }[wave.text.match(/→ (TOP|CENTRE|BOTTOM|LEFT|RIGHT)/)[1]] : -1;   // the west's portrait words: LEFT is lane 0
+    const laneIdx = wave ? { TOP: 0, CENTRE: 1, BOTTOM: 2, LEFT: 0, RIGHT: 2 }[wave.text.match(WAVE)[1]] : -1;   // the west's portrait words: LEFT is lane 0
     const dotOk = !wave || (wave.followed && wave.followed.includes(laneIdx)) || (wave.coach && wave.coach.includes(laneIdx));
-    const seen = wave ? '' : await ev(() => window.__probe.plates.map((q) => `${q.time.toFixed(0)}s "${q.text}"`).join(' | '));   // what the glass did say, for whoever must find the wave
-    check(10, 'THE WAVE', !!wave && alarm && dotOk, wave ? `"${wave.text}" at ${wave.time.toFixed(1)} s · alarm gate ${alarm} · lane ${laneIdx} followed ${JSON.stringify(wave.followed)} coach dot ${JSON.stringify(wave.coach)}` : `no wave plate by ${(await simTime()).toFixed(0)} s · alarm gate ${alarm} · plates seen: ${seen || 'none'}`);
+    const seen = wave ? '' : await ev(() => window.__probe.plates.map((q) => `${q.time.toFixed(0)}s "${q.text}"`).join(' | '));
+    // when no plate came: the captain's own wave state, so a red says whether the captain never announced or the glass swallowed it
+    const why = wave ? '' : await ev(() => { const V = window.VECTOR, S = V.sim.S, bot = V.bots.find((q) => q.team === 1) || V.bots[0]; return JSON.stringify({ waves: S.stats.waves, wave: S.wave, pending: bot && bot.pending, energy: V.sim.energy.map(Math.round), alive: [V.sim.U.count[0], V.sim.U.count[1]] }); });   // what the glass did say, for whoever must find the wave
+    check(10, 'THE WAVE', !!wave && alarm && dotOk, wave ? `"${wave.text}" at ${wave.time.toFixed(1)} s · alarm gate ${alarm} · lane ${laneIdx} followed ${JSON.stringify(wave.followed)} coach dot ${JSON.stringify(wave.coach)}` : `no wave plate by ${(await simTime()).toFixed(0)} s · alarm gate ${alarm} · plates seen: ${seen || 'none'} · the captain ${why}`);
     if (wave && wave.off < 0) {
       await shot(5, 'wave');   // the frame while the plate is on; then its going-off, for the plate's budget
       for (let k = 0; k < 30 && wave.off < 0; k++) { await sleep(100); wave.off = await ev((src) => { const q = window.__probe.plates.find((e) => new RegExp(src).test(e.text)); return q ? q.off : -1; }, WAVE.source); }
@@ -637,12 +731,12 @@ function probeInPage() {
       await drag({ x: card.x, y: card.y }, { x: spots[0].x, y: spots[0].y });
       await sleep(200);
       await p.mouse.up(); await sleep(600);
-      const born = await bornSince(before), m1 = await musters();
-      drop = { musters: [m0, m1], lanes: [...new Set(born.map((q) => q.lane))], n: born.length };
+      const born = await bornEver(before), m1 = await musters();
+      drop = { musters: [m0, m1], lanes: [...new Set(born.map((q) => q.lane))], n: born.length, alive: born.filter((q) => q.alive).length };
     }
     // the tap has moved the camera when it is halfway to the point within 300 ms; the settle is the budget row, in frames of the 0.25 lerp
     const tapOk = tapR && tapR.follow >= 0 && tapR.follow <= 300 && tapR.half >= 0 && tapR.half <= 300, dropOk = drop && drop.musters[1] === drop.musters[0] + 1 && drop.n > 0 && drop.lanes.length === 1 && drop.lanes[0] === 0;
-    check(11, 'THE MINIMAP', rectOk && tapOk && dropOk, `rect ${rectStr(r)} (wants ${G.mini.join(',')}) · centre band ${spots[1] ? `tapped at ${spots[1].x},${spots[1].y} (world x ${spots[1].wx}): follow lane ${tapR.after.lane} in ${Math.round(tapR.follow)} ms, camera ${cam0.x} → ${tapR.after.x}: halfway in ${Math.round(tapR.half)} ms, there in ${Math.round(tapR.there)} ms (${tapR.frames} frames)` : 'NOT FOUND by V.minimap.hit'} · top band drop ${spots[0] ? `${drop.n} bodies lanes ${drop.lanes.join(',')} musters ${drop.musters.join(' → ')}` : 'NOT FOUND'}`);
+    check(11, 'THE MINIMAP', rectOk && tapOk && dropOk, `rect ${rectStr(r)} (wants ${G.mini.join(',')}) · centre band ${spots[1] ? `tapped at ${spots[1].x},${spots[1].y} (world x ${spots[1].wx}): follow lane ${tapR.after.lane} in ${Math.round(tapR.follow)} ms, camera ${cam0.x} → ${tapR.after.x}: halfway in ${Math.round(tapR.half)} ms, there in ${Math.round(tapR.there)} ms (${tapR.frames} frames)` : 'NOT FOUND by V.minimap.hit'} · top band drop ${spots[0] ? `${drop.n} bodies (${drop.alive} alive) lanes ${drop.lanes.join(',')} musters ${drop.musters.join(' → ')}` : 'NOT FOUND'}`);
     if (tapR) measure('re-follow 200 (0.25 a frame: 12 frames to 97 %)', 12, tapR.frames, 'frames', null, `${Math.round(tapR.there)} ms`);
   }
 

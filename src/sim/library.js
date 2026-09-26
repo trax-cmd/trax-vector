@@ -39,13 +39,10 @@ export const LIBRARY = [
 
 // THE ROLES: one per shape. This is the whole strategy a player needs to read the field: shape against
 // shape. THE TABLE IS MEASURED, NOT PROMISED: tools/duel.js fights every battalion against every other at
-// the role prices below and writes BEATS from what it saw - a shape beats another it wins against by more
-// than 0.15, both seats folded. The judge's reading of 2026-09-25 on the lane field (the two lines alone in
-// the centre lane, 900 apart at THE CENTRE, the strongholds out of the fight; two duels a pair, 1,200 energy
-// a side, --passes 3), which a second run on the same bytes repeated to the digit:
-//   ● beats ◆ +0.23 ◯ +0.18 · ■ beats ● +0.49 ◆ +0.26 ▲ +0.22 · ▲ beats ◆ +0.26 ⬢ +0.16 · ◯ beats ■ +0.16 · ◆ beats ◯ +0.33
-//   ⬢ beats no shape by the margin (its best ◆ +0.10, ◯ +0.09): the long guns' trade is the strongholds, which take
-//   their shots whole (sim.js THE WALL) and which the judge keeps out of the fight.
+// the role prices below and prints THE ROLE MATRIX it saw, baked below as MARGIN - a shape beats another it
+// wins against by more than BEATS_BY, both seats folded. ⬢ beats no shape by the margin (its best ◆ +0.10,
+// ◯ +0.09): the long guns' trade is the strongholds, which take their shots whole (sim.js THE WALL) and which
+// the judge keeps out of the fight.
 // At the heart a three-way cycle - squares beat orbs, orbs beat rings, rings beat squares - with the triangle
 // hunting hexagons, and the diamond, which hunts rings, answered by the orb, the square and the triangle.
 export const ROLES = ['SWARM', 'ARMOR', 'STRIKE', 'SIEGE', 'FIELD', 'BLADE'];   // in FAMILIES order: orb, square, tri, hex, ring, diamond
@@ -55,9 +52,25 @@ export const ROLE_JOB = ['cheap, many', 'slow wall', 'fast divers', 'long guns',
    the SIEGE shape beats no shape by the judge, it beats strongholds; the card, the hold banner and the coach say so through this one constant */
 export const GATE_BREAKER = 3;
 export const SUPER_NAMES = ['OVERDRIVE', 'BULWARK', 'BLINK', 'BARRAGE', 'NOVA', 'EXECUTE'];   // what a surge does to each shape (sim.js fireSurge); the plate prints the lane's top role's
-export const BEATS = [[5, 4], [0, 5, 2], [5, 3], [], [1], [4]];   // role r beats BEATS[r], strongest first - the judge's reading, see above
-// LOSES is derived, never written: the roles that beat r, so the green row of one card and the red row of another cannot disagree
-export const LOSES = ROLES.map((_, r) => ROLES.map((_, q) => q).filter((q) => BEATS[q].includes(r)));
+/* THE MARGIN: the judge's role matrix, row against column (+1 the row wins whole), at the ROLE_PRICE below - the reading of
+   2026-09-25 on the lane field (the two lines alone in the centre lane, 900 apart at THE CENTRE, the strongholds out of the fight;
+   node tools/duel.js --reps 2 --passes 1, 1,200 energy a side), carried to three digits so the two +0.26s against ◆ keep their order */
+const MARGIN = [
+  //  ●       ■       ▲       ⬢       ◯       ◆
+  [ 0,     -0.493,  0.099,  0.129,  0.180,  0.232],   // ● SWARM
+  [ 0.493,  0,      0.221,  0.065, -0.163,  0.258],   // ■ ARMOR
+  [-0.099, -0.221,  0,      0.165, -0.016,  0.264],   // ▲ STRIKE
+  [-0.129, -0.065, -0.165,  0,      0.085,  0.104],   // ⬢ SIEGE
+  [-0.180,  0.163,  0.016, -0.085,  0,     -0.334],   // ◯ FIELD
+  [-0.232, -0.258, -0.264, -0.104,  0.334,  0     ],   // ◆ BLADE
+];
+const BEATS_BY = 0.15;   // the judge's line: a win by more than this is a beat (tools/duel.js)
+const ALL = ROLES.map((_, q) => q);
+/* BEATS and LOSES are both read off MARGIN, strongest first, so the first of either list is the hardest counter (the banner and
+   the coach name LOSES[r][0]). THE INVARIANT: q is in LOSES[r] exactly when r is in BEATS[q] - both test MARGIN[q][r] > BEATS_BY -
+   so the green row of one card and the red row of another cannot disagree. */
+export const BEATS = ALL.map((r) => ALL.filter((q) => MARGIN[r][q] > BEATS_BY).sort((p, q) => MARGIN[r][q] - MARGIN[r][p]));
+export const LOSES = ALL.map((r) => ALL.filter((q) => MARGIN[q][r] > BEATS_BY).sort((p, q) => MARGIN[q][r] - MARGIN[p][r]));
 export const roleOf = (family) => FAMILIES.indexOf(family);
 
 // THE BATTALIONS: what a commander deploys. A formation of bodies with a role and a shape on the field.

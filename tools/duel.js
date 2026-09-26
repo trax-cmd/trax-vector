@@ -1,10 +1,12 @@
 // duel.js — THE JUDGE. Every battalion against every battalion at equal energy, alone in the centre lane with
-// no stronghold in reach, until one side is dead or the clock runs. The results fold by role. Then the judge
-// PRICES the roles: a role that wins on average pays more next pass, a role that loses pays less, until every
-// role is worth its cost (--passes). Then THE ANSWER TO BLADE (§7): while no shape beats the diamond, its
-// price rises a tenth a pass - fewer diamonds for the budget - until one does or the price cap stops it.
-// Finally it prints the table it measured - which shape beats which at those prices - for library.js to
-// carry (BEATS, ROLE_PRICE), so a card never promises what the field denies.
+// no stronghold in reach, until one side is dead or the clock runs. The results fold by role. The judge
+// CONFIRMS first: pass 1 measures at the prices library.js carries, and when every promise of BEATS holds
+// there it stops - a baked table is confirmed, never walked off its own prices. Only a broken promise sets
+// it PRICING the roles: a role that wins on average pays more next pass, a role that loses pays less, until
+// the table holds or --passes (the walk's ceiling, pass 1 included) runs out. Then THE ANSWER TO BLADE (§7):
+// while no shape beats the diamond, its price rises a tenth a pass - fewer diamonds for the budget - until
+// one does or the price cap stops it. Finally it prints the table it measured - which shape beats which at
+// those prices - for library.js to carry (BEATS, ROLE_PRICE), so a card never promises what the field denies.
 //   node tools/duel.js [--budget 1200] [--reps 2] [--clock 75] [--passes 1] [--verbose]
 // The placement (placeDuel) is shared with trace.js: both lines muster through the lane op at their own gate
 // of lane 1 (gates 1 and 6) and are carried into band 1 so their inner edges stand 450 either side of THE
@@ -89,13 +91,22 @@ function main() {
   const prices = (rp) => rp.map((v) => v.toFixed(2)).join(' ');
   // the shapes that beat role r, strongest first - what its LOSES row will read
   const beatenBy = (V, r) => ROLES.map((_, a) => a).filter((a) => a !== r && V[a][r] > BEATS_BY).sort((p, q) => V[q][r] - V[p][r]);
+  // THE PROMISE read off V: per role, each shape it claims to beat (> +BEATS_BY) and each that claims it (< -BEATS_BY)
+  const promise = (V) => ROLES.map((_, a) => [
+    ...BEATS[a].map((b) => ({ word: 'beats', b, v: V[a][b], ok: V[a][b] > BEATS_BY })),
+    ...LOSES[a].map((b) => ({ word: 'loses', b, v: V[a][b], ok: V[a][b] < -BEATS_BY })),
+  ]);
+  const brokenIn = (V) => promise(V).flat().filter((c) => !c.ok).length;
 
   const t0 = Date.now();
   let rolePrice = ROLE_PRICE.slice(), V = null, avg = null;
+  // pass 1 at the baked prices; the walk moves them only while a promise is broken, and never past its ceiling
   for (let p = 0; p < PASSES; p++) {
     ({ V, avg } = pass(rolePrice));
-    console.log(`pass ${p + 1}: role strength ` + ROLES.map((r, i) => `${ROLE_GLYPH[i]} ${signed(avg[i])}`).join('  ') + `   prices ${prices(rolePrice)}`);
-    if (p < PASSES - 1) rolePrice = rolePrice.map((v, i) => Math.max(PRICE_FLOOR, Math.min(PRICE_CAP, v * (1 + avg[i] / 2))));
+    const broken = brokenIn(V);
+    console.log(`pass ${p + 1}: role strength ` + ROLES.map((r, i) => `${ROLE_GLYPH[i]} ${signed(avg[i])}`).join('  ') + `   prices ${prices(rolePrice)} · ${broken ? broken + ' broken' : 'the table holds'}`);
+    if (!broken || p === PASSES - 1) break;
+    rolePrice = rolePrice.map((v, i) => Math.max(PRICE_FLOOR, Math.min(PRICE_CAP, v * (1 + avg[i] / 2))));
   }
   // THE ANSWER TO BLADE (§7): the other prices stand; only the diamond's climbs, a tenth a pass, until a shape beats it
   for (let p = 1; !beatenBy(V, BLADE).length && rolePrice[BLADE] + BLADE_STEP <= PRICE_CAP; p++) {
@@ -109,15 +120,10 @@ function main() {
   console.log('          ' + ROLES.map((r) => r.padStart(8)).join(''));
   for (let a = 0; a < 6; a++) console.log((ROLE_GLYPH[a] + ' ' + ROLES[a]).padEnd(10) + ROLES.map((_, b) => (a === b ? '     ·  ' : signed(V[a][b]).padStart(8))).join(''));
   console.log(`\nTHE PROMISE (library.js BEATS): a shape should beat the two it claims (> +${BEATS_BY}), lose to the two that claim it (< -${BEATS_BY})`);
-  let broken = 0;
-  for (let a = 0; a < 6; a++) {
-    const line = [];
-    for (const b of BEATS[a]) { const v = V[a][b]; const ok = v > BEATS_BY; if (!ok) broken++; line.push(`beats ${ROLE_GLYPH[b]} ${signed(v)} ${ok ? 'ok' : 'BROKEN'}`); }
-    for (const b of LOSES[a]) { const v = V[a][b]; const ok = v < -BEATS_BY; if (!ok) broken++; line.push(`loses ${ROLE_GLYPH[b]} ${signed(v)} ${ok ? 'ok' : 'BROKEN'}`); }
-    console.log((ROLE_GLYPH[a] + ' ' + ROLES[a]).padEnd(10) + (line.join(' · ') || 'claims nothing'));
-  }
+  promise(V).forEach((claims, a) => console.log((ROLE_GLYPH[a] + ' ' + ROLES[a]).padEnd(10) + (claims.map((c) => `${c.word} ${ROLE_GLYPH[c.b]} ${signed(c.v)} ${c.ok ? 'ok' : 'BROKEN'}`).join(' · ') || 'claims nothing')));
+  const broken = brokenIn(V), baked = rolePrice.every((v, i) => v === ROLE_PRICE[i]);
   const measured = ROLES.map((_, a) => ROLES.map((_, b) => b).filter((b) => b !== a && V[a][b] > BEATS_BY).sort((p, q) => V[a][q] - V[a][p]));
-  console.log('\n' + (broken ? broken + ' promise(s) BROKEN' : 'THE TABLE HOLDS') + ' · ' + ((Date.now() - t0) / 1000).toFixed(0) + ' s');
+  console.log('\n' + (broken ? broken + ' promise(s) BROKEN' : `THE TABLE HOLDS at the ${baked ? 'baked' : 'walked'} prices`) + ' · ' + ((Date.now() - t0) / 1000).toFixed(0) + ' s');
   console.log('MEASURED BEATS = ' + JSON.stringify(measured) + '   ROLE_PRICE = ' + JSON.stringify(rolePrice.map((v) => +v.toFixed(2))) + '   (LOSES follows: ' + ROLES.map((_, r) => ROLE_GLYPH[r] + ' ' + (beatenBy(V, r).map((a) => ROLE_GLYPH[a]).join('') || '—')).join(' ') + ')');
 }
 

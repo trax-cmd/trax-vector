@@ -77,11 +77,11 @@ float drawRadius(float r, int shape, int state) {
   return max(sz, uFloor[shape] + 0.25 * (r - uRmin[shape]));
 }
 // the quad's half-extent in SDF units: the shape's own reach, plus what is drawn outside it in pixels - the seam and the
-// antialiasing on a body, the gold surge ring, the green or red answer ring - so no pixel is shaded for nothing
+// antialiasing on a body, the gold surge line, the green or red answer ring - so no pixel is shaded for nothing
 float extent(int shape, int state, float px) {
   float reach = shape == 1 ? 1.2021 : shape == 5 ? 1.6129 : 1.0;   // a box's corner (0.85·√2), a diamond's long apex, a unit circle
   float pad = ((state & (NOFLOOR | CAP2)) != 0) ? 0.75 : 2.25;         // the antialiasing alone, or the 1.5 px seam and the antialiasing
-  if ((state & SURGE) != 0) pad = max(pad, 4.75);                     // the gold ring ends 4 px out
+  if ((state & SURGE) != 0) pad = max(pad, 3.25);                     // the gold line ends 2.5 px out
   float e = reach + pad / px;
   if ((state & (BEATS | LOSES)) != 0) e = max(e, max(1.8, 7.0 / px) + 1.75 / px);   // the answer ring: 2 px at 1.8 r, never under 7 px
   return e;
@@ -111,7 +111,7 @@ const SHAPE_FS_HEAD = `#version 300 es
 precision highp float;
 in vec2 vP; in vec4 vFill; flat in vec3 vEdge; flat in int vMark; flat in int vState; flat in float vFlash; flat in float vPx; flat in float vInvPx;
 flat in float vOw; flat in float vHb; flat in float vAa; flat in float vInvAa; flat in vec2 vOrbit;
-uniform float uTime; uniform float uPulse;
+uniform float uTime;
 out vec4 o;
 const vec3 SEAM = ${v3(PALETTE.ground)}, WHITE = vec3(1.0), GOLD = ${v3(PALETTE.gold)}, GREEN = ${v3(PALETTE.beats)}, RED = ${v3(PALETTE.loses)};
 const int STUN = 2, SURGE = 4, BEATS = 8, LOSES = 16, DIM3 = 32, DIM4 = 64, CLOAK = 128, NOFLOOR = 256, CAP2 = 512;
@@ -191,11 +191,11 @@ void main() {
     vec3 mc = vMark == 7 ? SEAM : edgeC; float ma = vMark == 7 ? 0.9 : lineA;
     col = mix(col, mc * ma, m); alpha = mix(alpha, ma, m);
   }
-  if ((st & SURGE) != 0) {   // a 2 px gold ring 2 px outside the outline pulsing 1.0 -> 0.5 at 2 Hz (uPulse), and a 1 px white rim on the outline
-    float g = cov(d - 4.0 * vInvPx) * (1.0 - cov(d - 2.0 * vInvPx)) * uPulse;
-    float w = cov(d - vInvPx) * (1.0 - edge);
+  // SURGE: one opaque 1 px gold line just outside the seam. It covers what lies under it instead of adding to it, so a
+  // surging cluster reads as bodies each wearing a thin gold border, never as a gold haze; the seam keeps it off the outline
+  if ((st & SURGE) != 0) {
+    float g = cov(d - 2.5 * vInvPx) * (1.0 - cov(d - 1.5 * vInvPx));
     col = mix(col, GOLD, g); alpha = mix(alpha, 1.0, g);
-    col = mix(col, WHITE, w); alpha = mix(alpha, 1.0, w);
   }
   if ((st & (BEATS | LOSES)) != 0) {   // the answer ring: 2 px at 1.8 r, never under 7 px
     float ring = cov(abs(length(p) - max(1.8, 7.0 * vInvPx)) - vInvPx);
@@ -352,7 +352,7 @@ function affine(view, cw, ch, t) {
   return t;
 }
 const DEFAULT_LANE = { westTo: RUN0, eastFrom: RUN1, frontW: 1500, frontE: 7500, chevW: 1, chevE: -1, fxTeam: -1, fxAmt: 0, broken: 0 };
-const SHAPE_UNIFORMS = ['uRec', 'uCam', 'uZoom', 'uMini', 'uDpr', 'uTime', 'uPulse', 'uFloor[0]', 'uRmin[0]'];
+const SHAPE_UNIFORMS = ['uRec', 'uCam', 'uZoom', 'uMini', 'uDpr', 'uTime', 'uFloor[0]', 'uRmin[0]'];
 const FIELD_UNIFORMS = ['uInv', 'uField', 'uPx', 'uTime', 'uJolt', 'uLane[0]', 'uFx[0]', 'uTint[0]', 'uBroken[0]'];
 
 export function createRenderer(canvas) {
@@ -369,7 +369,7 @@ export function createRenderer(canvas) {
   const cam = new Float32Array(9), inv = new Float32Array(9), laneBuf = new Float32Array(12), fxBuf = new Float32Array(12), tintBuf = new Float32Array(12), brokenBuf = new Float32Array(3);
   const miniGround = rgb(PALETTE.miniGround), fills = [rgb(PALETTE.westFill), rgb(PALETTE.eastFill)];
   let vw = 1, vh = 1, cw = 1, ch = 1, dpr = 1, counts = { shapes: 0, sparks: 0, lines: 0 };
-  let pulse = 1, pass = 0;   // the surge ring's pulse this frame; a stamp for the camera a pass sets, so a program takes it once
+  let pass = 0;   // a stamp for the camera a pass sets, so a program takes it once
   const readbacks = [];
 
   function push(st, x, y, r, shape, fr, fg, fb, fa, er, eg, eb, rot, band, mark, flash, state) {
@@ -378,7 +378,7 @@ export function createRenderer(canvas) {
     d[o] = x; d[o + 1] = y; d[o + 2] = r; d[o + 3] = shape; d[o + 4] = fr; d[o + 5] = fg; d[o + 6] = fb; d[o + 7] = fa;
     d[o + 8] = er; d[o + 9] = eg; d[o + 10] = eb; d[o + 11] = rot; d[o + 12] = band; d[o + 13] = mark; d[o + 14] = flash; d[o + 15] = state; st.n++;
   }
-  // §9.3 what a painter gets: body (premultiplied pass), spark (additive, drawn last), line (additive, per-vertex alpha)
+  // §9.3 what a painter gets: body (the first pass), line (per-vertex alpha), spark (drawn last); how the last two blend is drawPasses'
   const out = {
     body: (x, y, r, shape, fr, fg, fb, fa, er, eg, eb, rot, band, mark, flash, state) => push(shapes, x, y, r, shape, fr, fg, fb, fa, er, eg, eb, rot, band, mark, flash, state),
     spark: (x, y, r, shape, fr, fg, fb, fa, er, eg, eb, rot, band, mark, flash, state) => push(sparks, x, y, r, shape, fr, fg, fb, fa, er, eg, eb, rot, band, mark, flash, state),
@@ -439,7 +439,7 @@ export function createRenderer(canvas) {
     gl.useProgram(P.prog);
     if (P.pass === pass) return;
     P.pass = pass;
-    gl.uniformMatrix3fv(P.u.uCam, false, cam); gl.uniform1f(P.u.uZoom, zoom); gl.uniform1f(P.u.uDpr, pixelRatio); gl.uniform1f(P.u.uTime, time); gl.uniform1f(P.u.uPulse, pulse);
+    gl.uniformMatrix3fv(P.u.uCam, false, cam); gl.uniform1f(P.u.uZoom, zoom); gl.uniform1f(P.u.uDpr, pixelRatio); gl.uniform1f(P.u.uTime, time);
   }
   // a shape stream is drawn in runs of one shape, each by that shape's own program, in the order the painter filled it
   function drawShapes(st, zoom, time, pixelRatio = dpr) {
@@ -466,12 +466,15 @@ export function createRenderer(canvas) {
     lines.bind(); gl.drawArrays(gl.TRIANGLES, 0, lines.n * 6);
   }
   const premultiplied = () => gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA), additive = () => gl.blendFunc(gl.ONE, gl.ONE);
-  // the three passes of a painted view: bodies over the ground, then the lines, then the sparks on top
-  function drawPasses(zoom, time) {
+  // the three passes of a painted view: bodies over the ground, then the lines, then the sparks on top. On the field every
+  // pass blends premultiplied, so a light covers what lies under it and never sums past its own colour: a surging cluster's
+  // tripled trails and 2.5x bolts stacked additively into a white-hot comet - the fuzzy light he named. The minimap
+  // keeps its lines additive: its bars are authored as differences on its own ground (minimap.js onGround).
+  function drawPasses(zoom, time, lightBlend = premultiplied) {
     shapes.upload(); lines.upload(); sparks.upload();
     gl.enable(gl.BLEND);
     premultiplied(); drawShapes(shapes, zoom, time);
-    additive(); drawLines(zoom); drawShapes(sparks, zoom, time);
+    lightBlend(); drawLines(zoom); drawShapes(sparks, zoom, time);
   }
   // §2.10: the minimap is a second viewport: scissored, its own ground, the same body stream as dots, then its own marks
   function drawMini(mini, time) {
@@ -482,7 +485,7 @@ export function createRenderer(canvas) {
     gl.enable(gl.BLEND); premultiplied(); drawDots(shapes, mv.zoom, time);
     shapes.n = 0; sparks.n = 0; lines.n = 0;
     if (mini.fill) mini.fill(out);
-    drawPasses(mv.zoom, time);
+    drawPasses(mv.zoom, time, additive);
   }
   // css px in, top-down RGBA out, read at the end of the frame it was asked in
   function flushReadbacks() {
@@ -504,7 +507,6 @@ export function createRenderer(canvas) {
   function frame(view, fill, mini) {
     if (!observed || dpr !== ratio()) resize();
     const time = view.time === undefined ? performance.now() / 1000 : view.time;
-    pulse = 0.75 + 0.25 * Math.cos(time * 12.566);   // the surge ring, 1.0 -> 0.5 at 2 Hz
     gl.viewport(0, 0, vw, vh); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
     gl.enable(gl.SCISSOR_TEST); scissor(view.rect || { x: 0, y: 0, w: cw, h: ch });
     setCamera(affine(view, cw, ch, TMP), cw, ch);
