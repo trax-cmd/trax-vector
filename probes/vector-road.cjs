@@ -546,7 +546,7 @@ function probeInPage() {
   {
     await lookAt(1);
     const pick = await ev(async (kinds) => {
-      const lib = await import('../src/sim/library.js');
+      const lib = await import(new URL('src/sim/library.js', document.baseURI).href);   // from the page's own address: the live page sits one folder below the site's root
       const V = window.VECTOR, P = window.__probe, deck = V.sim.decks[0];
       const i = deck.findIndex((b) => lib.BEATS[b.role].length && lib.LOSES[b.role].length);
       if (i < 0) return null;
