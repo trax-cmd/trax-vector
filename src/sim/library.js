@@ -34,6 +34,9 @@ export const LIBRARY = [
   { id: 'LODESTONE', family: 'ring', r: 18, hp: 140, speed: 95, move: 'march', weapon: 'pulse', w: { dmg: 20, rate: 0.75, range: 150 }, traits: ['magnet'], tags: ['zone', 'antiswarm'] },
   // DIAMONDS - the blades: THE BLADE
   { id: 'NEEDLE', family: 'diamond', hp: 34, speed: 330, move: 'phase', weapon: 'beam', w: { dmg: 42, rate: 1.3, range: 270 }, traits: ['cloak'], tags: ['assassin'] },
+  // THE FLAGSHIP (v0.7): a side's carrier, one a side, never in a deck - its commander steers it, its army launches out of it (sim.js THE CARRIER)
+  // and holds harder inside its ward. A hexagon, so its guns land whole on a gate like the long guns': leading the charge breaks the gate.
+  { id: 'FLAGSHIP', family: 'hex', r: 38, hp: 2600, speed: 250, move: 'march', weapon: 'beam', w: { dmg: 26, rate: 2.4, range: 440, pierce: 2 }, aggro: 520, cost: 0, tags: ['flagship'] },
   { id: 'PRISM',  family: 'diamond', r: 14, hp: 74, speed: 210, move: 'orbit', weapon: 'beam', w: { dmg: 17, rate: 2, range: 350, pierce: 3 }, tags: ['strike', 'line'] },
 ];
 

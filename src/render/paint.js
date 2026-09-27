@@ -326,6 +326,21 @@ export function createPaint({ sim, vfx, state, R, hold = () => state.hold, drag 
     }
   }
 
+  // THE FLAGSHIPS (v0.7): each wears its ward ring faint in its side's edge colour and its hull as an arc; the person's also a gold ring
+  // and a dotted gold line to where it is steered, ended by a small gold ring - the helm made visible
+  function flags(out) {
+    const Fl = sim.flags; if (!Fl) return;
+    for (let t = 0; t < 2; t++) {
+      const f = Fl.i[t]; if (f < 0 || !U.alive[f]) continue;
+      const x = U.x[f], y = U.y[f], e = EDGE[t], r = kR[U.kind[f]], frac = Math.max(0, Math.min(1, U.hp[f] / sim.flagTop(t)));
+      ring(out, x, y, sim.wardR(t), 1.5, e, 0.3);
+      arc(out, x, y, r + wu(9), clockStart(rot), frac * TAU, 40, wu(2.5), frac < 0.35 ? LOSES_C : e, 1);
+      if (t !== me) continue;
+      ring(out, x, y, r + wu(16), 2, GOLD, 0.9);
+      const st = Fl.steer[t];
+      if (Math.hypot(st[0] - x, st[1] - y) > r * 2) { dotted(out, x, y, st[0], st[1], wu(10), wu(0.75), GOLD, 0.55); ring(out, st[0], st[1], wu(7), 1.5, GOLD, 0.85); }
+    }
+  }
   function fill(out, view, now) {
     zoom = view.zoom; rot = view.rot || 0; me = state.team; ms = now * 1000;
     for (let t = 0; t < 2; t++) surgeLane[t] = S.surgeUntil[t] > sim.time ? S.surgeLane[t] : -1;
@@ -335,6 +350,7 @@ export function createPaint({ sim, vfx, state, R, hold = () => state.hold, drag 
     strongholds(out, now);
     brokenBars(out);
     bodies(out, now);
+    flags(out);
     shots(out);
     mines(out);
     vfx.trail.fill(out, U, zoom, surging);

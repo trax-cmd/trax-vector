@@ -10,8 +10,10 @@
 // Clocks: `nowMs` is performance.now() milliseconds - state.slowUntil, shake.until, flashUntil, the follow's
 // orderedAt and lastOrderAt (drag.js's stamps) and its chosenAt all read on it; paint.fill takes seconds on the same clock;
 // the counter moments and the follow's deaths are timed on sim.time, so slow-time does not stretch them.
-import { createSim, TICK, TEMPERS } from './sim/sim.js';
+import { createSim, TICK, TEMPERS, BOON_IDS } from './sim/sim.js';
 import { createBot } from './ai/bot.js';
+import { createAdmiral } from './ai/admiral.js';
+import { createMuster } from './ai/muster.js';
 import { advise } from './ai/coach.js';
 import { BEATS, ROLE_GLYPH } from './sim/library.js';
 import { W, H, LANE_Y, HALF, GATE_X, CP_X, CENTRE, CP_R, DROP_MIN, DROP_MAX, inRun, cp, gate, keep, towerLane, laneWord } from './sim/lanes.js';
@@ -65,13 +67,21 @@ const q = new URLSearchParams(location.search);
 const seed = +(q.get('seed') || ((Date.now() / 1000) | 0) % 100000);
 const team = q.get('team') === '1' ? 1 : 0, them = 1 - team;
 const temper = pickTemper(q.get('temper'));
-const sim = createSim({ seed, temper });
+// v0.7 THE FLAGSHIP is the game: the person flies a carrier, both armies launch out of their flagships on their own; ?mode=classic is v0.6's card game
+const FLAGS = q.get('mode') !== 'classic';
+const sim = createSim({ seed, temper: FLAGS ? 'flag_' + temper : temper, flagships: FLAGS });
 const { S, U, T, WL, kinds } = sim;
 // who holds each side: the person's side is human unless asked; the far side is the captain, a relay wire, or a second person
 const west = q.get('a') || (team === 1 ? 'bot' : 'human'), east = q.get('b') || (team === 0 ? 'bot' : 'human');
 const bots = [];
-if (west === 'bot') bots.push(createBot(sim, 0, { seed }));
-if (east === 'bot') bots.push(createBot(sim, 1, { seed: seed + 1 }));
+if (FLAGS) {   // both bays launch; the east's helm is the admiral's, the west's the person's (?a=bot: the admiral's too)
+  bots.push(createMuster(sim, 0), createMuster(sim, 1));
+  if (east === 'bot') bots.push(createAdmiral(sim, 1, { seed: seed + 1 }));
+  if (west === 'bot') bots.push(createAdmiral(sim, 0, { seed }));
+} else {
+  if (west === 'bot') bots.push(createBot(sim, 0, { seed }));
+  if (east === 'bot') bots.push(createBot(sim, 1, { seed: seed + 1 }));
+}
 const relay = q.get('relay') ? createRelayClient(q.get('relay'), sim, east === 'relay' ? 1 : 0) : null;
 
 // ---- THE STATE (§9.7) and THE VIEW (§9.3)
@@ -99,7 +109,8 @@ const minimap = createMinimap({ R, sim, state, el: $('minimap'), glass: state.gl
 const paint = createPaint({ sim, vfx, state, R });
 const announce = createAnnounce({ el: $('plate'), state, follow: followLane, sound });
 const drag = createDrag({ canvas, R, sim, state, hud, minimap, announce, sound, order, surge, coach: () => state.advice, glass: state.glass, view });
-createInput(canvas, view, state, { follow: followLane, free: () => { state.follow.free = true; }, cancelDrag: drag.cancel, tap: (i) => drag.tapCard(i), digitLane: (i, lane) => drag.tapCard(i, lane), wake: sound.wake });
+if (FLAGS) document.body.classList.add('flags');
+if (!FLAGS) createInput(canvas, view, state, { follow: followLane, free: () => { state.follow.free = true; }, cancelDrag: drag.cancel, tap: (i) => drag.tapCard(i), digitLane: (i, lane) => drag.tapCard(i, lane), wake: sound.wake });
 const surgeEl = $('surge'), handEl = $('hand'), flashEl = $('flash');
 
 // ---- THE GLASS: judged on every resize; the rot turns the field up on a phone held upright, the rect is what the chrome leaves clear
@@ -110,6 +121,7 @@ function layout() {
   if (changed) view.zoom = ZOOM[g];
   minimap.layout(g);
   const s = surgeEl.getBoundingClientRect(), h = handEl.getBoundingClientRect();
+  const tr = $('tray'); if (FLAGS && tr) tr.style.height = Math.max(64, h.height) + 'px';   // the tray stands exactly where the hand stood
   view.rect.x = 0; view.rect.y = s.bottom; view.rect.w = innerWidth; view.rect.h = Math.max(1, h.top - s.bottom);
 }
 layout();
@@ -121,7 +133,10 @@ function order(i, lane, x) {
   if (ok) { state.deployed++; sound.play('muster', team); }
   return ok;
 }
-function surge(lane) { return sim.apply({ op: 'surge', team, lane }); }
+function surge(lane) {
+  if (FLAGS) { const f = sim.flags.i[team]; if (f >= 0) lane = U.lane[f]; }   // the flagship's surge goes where it flies
+  return sim.apply({ op: 'surge', team, lane });
+}
 
 // ---- THE FOLLOW (§2.2). The followed point of a lane: its last order's drop x for 6 s, else the centroid of its deaths in
 // the last 3 s, else the gap between its fronts, on the lane's centre-line and clamped to the run. Once a gate of the lane is
@@ -237,6 +252,7 @@ function followPoint(l, nowMs) {
   return [onRun(x), LANE_Y[l]];
 }
 function camera(nowMs) {
+  if (FLAGS) { helm.frame(); return; }
   const f = state.follow;
   f.hot = S.killsRing.sum[f.lane];
   if (f.free || drag.active) return;   // a freed camera stays where it was put; nothing moves under a live drag but its own edge pan
@@ -255,6 +271,7 @@ function camera(nowMs) {
     const d = down; down = null;
     if (!d || drag.active || performance.now() - d.t > TAP_MS || Math.hypot(e.clientX - d.x, e.clientY - d.y) > TAP_PX) return;
     const h = minimap.hit(e.clientX, e.clientY);
+    if (FLAGS && h.inside) { const [wx, wy] = R.toWorld(minimap.view(), e.clientX, e.clientY); helm.to(wx, wy); return; }   // a tap on the map: fly there
     if (h.inside) followLane(h.lane, h.x, inRun(h.x) ? undefined : R.toWorld(minimap.view(), e.clientX, e.clientY)[1]);
   });
 }
@@ -509,6 +526,13 @@ function route(e, nowMs) {
     case 'surge': announce.event(e); surgeFx[e.team] = { lane: e.lane, at: nowMs }; break;
     case 'wave': if (e.team !== team) { announce.event(e); alarm = { lane: e.lane, at: nowMs, until: nowMs + ALARM_MS }; if (!busy(e.lane)) pull(e.lane, nowMs); } break;
     case 'end': sound.play(e.winner === team ? 'win' : 'lose'); break;
+    case 'flagDown': {   // a flagship sunk: the loudest plate but a shatter's, the shake, and its rebuild clock
+      const mine = e.team === team;
+      announce.say(mine ? `YOUR FLAGSHIP IS DOWN · BACK IN ${e.back} S` : 'THEIR FLAGSHIP IS DOWN · PUSH', { team: mine ? them : team, prio: 7, sound: 'shatter' });
+      state.shake.amp = 14; state.shake.until = nowMs + 500; state.flashUntil = nowMs + 120;
+      break;
+    }
+    case 'flagUp': if (e.team === team && sim.time > 1) announce.say('YOUR FLAGSHIP IS BACK', { team, prio: 5, sound: 'capture' }); break;
     default: break;
   }
 }
@@ -573,8 +597,77 @@ const sheet = $('sheet'), soundBtn = $('sound');
 $('more').addEventListener('click', () => sheet.classList.toggle('open'));
 soundBtn.textContent = sound.muted ? 'SOUND OFF' : 'SOUND ON';
 soundBtn.addEventListener('click', () => { sound.wake(); soundBtn.textContent = sound.toggle() ? 'SOUND OFF' : 'SOUND ON'; });
-$('temper').addEventListener('click', () => { const names = Object.keys(TEMPERS); reload({ temper: names[(names.indexOf(temper) + 1) % names.length], seed }); });
+$('temper').addEventListener('click', () => { const names = ['easy', 'normal', 'hard']; reload({ temper: names[(names.indexOf(temper) + 1) % names.length], seed }); });
 $('again').addEventListener('click', () => reload({ seed: (seed * 7 + 13) % 100000 }));
+
+// ---- THE HELM (v0.7): the person flies the flagship. A mouse steers wherever it points over the field; a finger steers while it
+// is down and the flagship flies on to where it was lifted; held at the glass's edge the aim is re-read every frame, so the flagship
+// keeps flying as the camera follows it. Space fires the surge where the flagship flies; 1, 2, 3 take an upgrade; a tap on the map flies there.
+const helm = (() => {
+  let px = -1, py = -1, live = false, first = true;   // first: the opening frame puts the camera on the flagship at once
+  const to = (wx, wy) => sim.apply({ op: 'steer', team, x: wx, y: wy });
+  const aim = () => { if (!live) return; const [wx, wy] = R.toWorld(view, px, py); to(wx, wy); };
+  const inField = (x, y) => { const r = view.rect; return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; };
+  if (FLAGS) {
+    canvas.addEventListener('pointerdown', (e) => { sound.wake(); px = e.clientX; py = e.clientY; live = inField(px, py); aim(); });
+    canvas.addEventListener('pointermove', (e) => { px = e.clientX; py = e.clientY; if (e.pointerType === 'mouse') live = inField(px, py); aim(); });
+    canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') live = false; });
+    addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') live = false; });
+    addEventListener('keydown', (e) => {
+      if (e.code === 'Space') { e.preventDefault(); sound.wake(); surge(1); }
+      else if (e.key === '1' || e.key === '2' || e.key === '3') tray.pick(+e.key - 1);
+    });
+  }
+  // the camera rides the flagship, a quarter of the way toward where it is steered so the glass shows where it is going; while it
+  // rebuilds the camera waits over the keeps it will rise between
+  function frame() {
+    aim();
+    const f = sim.flags.i[team], st = sim.flags.steer[team];
+    const fx = f >= 0 ? U.x[f] : (team === 0 ? 750 : W - 750), fy = f >= 0 ? U.y[f] : LANE_Y[1];
+    const lead = f >= 0 ? 0.25 : 0, tx = fx + (st[0] - fx) * lead, ty = fy + (st[1] - fy) * lead;
+    if (first && f >= 0) { view.x = tx; view.y = ty; first = false; }
+    view.x += (tx - view.x) * 0.1; view.y += (ty - view.y) * 0.1;
+    state.follow.lane = f >= 0 ? U.lane[f] : 1;
+  }
+  return { frame, to };
+})();
+
+// ---- THE TRAY (v0.7): where the hand of cards was - the flagship's hull, the upgrade on offer (one of three, every boonEvery s), the armies
+const BOON_TEXT = {
+  hull: ['HULL +35%', 'a bigger flagship, repaired'], guns: ['GUNS +40%', 'its beams hit harder'], ward: ['WARD +30%', 'the shield ring grows'],
+  engines: ['ENGINES +25%', 'it flies faster'], pay: ['PAY +20%', 'more energy, a bigger army'], surge: ['SURGE +50%', 'the gold bar fills faster'],
+};
+const tray = (() => {
+  const el = $('tray'); if (!FLAGS || !el) return { sync() {}, pick() {} };
+  el.innerHTML = '<div class="hull"><b>FLAGSHIP</b><i><span></span></i><em></em></div><div class="offer"></div><div class="armies"><b></b><em></em></div>';
+  const hullBar = el.querySelector('.hull span'), hullTxt = el.querySelector('.hull em'), offerEl = el.querySelector('.offer'), armB = el.querySelector('.armies b'), armE = el.querySelector('.armies em');
+  let offer = null, at = sim.o.boonEvery, shownWait = -1;
+  function deal() {   // three different upgrades, drawn fresh each time
+    const pool = BOON_IDS.slice(); offer = [];
+    for (let k = 0; k < 3; k++) offer.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
+    offerEl.innerHTML = offer.map((id, k) => `<button type="button" data-k="${k}"><b>${BOON_TEXT[id][0]}</b><i>${BOON_TEXT[id][1]}</i><u>${k + 1}</u></button>`).join('');
+    offerEl.classList.add('ready');
+    announce.say('UPGRADE READY · PICK ONE', { team, prio: 4, sound: 'capture' });
+  }
+  offerEl.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) pick(+b.dataset.k); });
+  function pick(k) {
+    if (!offer || !offer[k]) return;
+    if (sim.apply({ op: 'boon', team, id: offer[k] })) sound.play('muster', team);
+    offer = null; at = sim.time + sim.o.boonEvery; shownWait = -1; offerEl.classList.remove('ready');
+  }
+  function sync() {
+    const f = sim.flags.i[team];
+    if (f >= 0) { const frac = Math.max(0, U.hp[f] / sim.flagTop(team)); hullBar.style.width = (frac * 100).toFixed(1) + '%'; hullBar.className = frac < 0.35 ? 'low' : ''; hullTxt.textContent = Math.round(U.hp[f]) + ' / ' + Math.round(sim.flagTop(team)); }
+    else { hullBar.style.width = '0%'; hullTxt.textContent = 'REBUILDING · ' + Math.max(0, sim.flags.back[team] - sim.time).toFixed(0) + ' S'; }
+    if (!offer && !sim.result) {
+      if (sim.time >= at) deal();
+      else { const w = Math.ceil(at - sim.time); if (w !== shownWait) { shownWait = w; offerEl.innerHTML = `<p>NEXT UPGRADE IN <b>${w}</b> S</p>`; } }
+    }
+    armB.textContent = 'ARMY ' + U.count[team] + ' vs ' + U.count[them];
+    armE.textContent = state.glass === 'desk' ? 'SPACE or the gold bar: SURGE' : 'TAP the gold bar: SURGE';
+  }
+  return { sync, pick };
+})();
 
 // ---- THE LOOP
 let last = performance.now(), acc = 0, fps = 0, fpsN = 0, fpsT = 0, snapAt = 0, frameS = 0;
@@ -594,14 +687,14 @@ function loop(nowMs) {
     }
     if (steps === 4) acc = 0;
   }
-  if (sim.tick >= snapAt) { snapAt = sim.tick + SNAP_TICKS; state.snap = sim.snapshot(); state.advice = advise(sim, team, state.snap, state.glass); }
+  if (sim.tick >= snapAt) { snapAt = sim.tick + SNAP_TICKS; state.snap = sim.snapshot(); state.advice = FLAGS ? null : advise(sim, team, state.snap, state.glass); }
   moments(nowMs);
   camera(nowMs);
   syncLanes(nowMs);
   frameS = nowMs / 1000; view.time = frameS;
   vfx.update(dt); vfx.trail.snap(U, nowMs);   // the light slows with the world
   R.frame(view, fillMain, mini);
-  hud.sync(nowMs); announce.tick(nowMs); labels.sync(nowMs);
+  hud.sync(nowMs); announce.tick(nowMs); labels.sync(nowMs); if (FLAGS) tray.sync();
   fpsN++; fpsT += real; if (fpsT >= 1) { fps = fpsN / fpsT; fpsN = 0; fpsT = 0; }
   requestAnimationFrame(loop);
 }

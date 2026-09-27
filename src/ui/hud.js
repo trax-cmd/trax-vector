@@ -133,7 +133,7 @@ export function createHud(sim, state, R, glass) {
     surgePct = pct; surgeReady = ready;
     surgeEl.style.setProperty('--p', pct / 100);   // the fill's share of its track (index.html #surge .bar)
     surgeEl.classList.toggle('ready', ready);
-    surgeTxt.textContent = ready ? 'SURGE READY · DRAG TO A LANE' : pct + '%';
+    surgeTxt.textContent = ready ? (document.body.classList.contains('flags') ? 'SURGE READY · SPACE OR TAP' : 'SURGE READY · DRAG TO A LANE') : pct + '%';
   }
 
   // ---- THE BANNER (§4.5): the words, the counts at the right, the line under; bannerOff lets it linger

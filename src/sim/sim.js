@@ -26,10 +26,14 @@ export const TICK = 1 / 30;
 /* HARD re-seated 2026-09-25 after round four (THE FLOCK and the open keeps took the stacked crowds' free firepower from the biggest army):
    1.05 read 3-5, 1.10 4-4, 1.12 3-5, 1.13 1-7, 1.14 0-8, 1.15 0-8 - a knife edge, one step of income flipping whole matches; that edge is the
    rout the next version answers with a comeback. EASY 8-0 and NORMAL 5-3 held untouched. */
-export const TEMPERS = { easy: { incomeM: 0.55, every: 120, burst: 2, wave: 55 }, normal: { incomeM: 0.95, every: 75, burst: 3, wave: 40 }, hard: { incomeM: 1.13, every: 45, burst: 4, wave: 30 } };
+export const TEMPERS = { easy: { incomeM: 0.55, every: 120, burst: 2, wave: 55 }, normal: { incomeM: 0.95, every: 75, burst: 3, wave: 40 }, hard: { incomeM: 1.13, every: 45, burst: 4, wave: 30 },
+  // THE FLAGSHIP TEMPERS (v0.7): both sides launch by the same bay and fly by the same kind of helm, so a temper is only the enemy's purse
+  flag_easy: { incomeM: 0.8, every: 75, burst: 3, wave: 40 }, flag_normal: { incomeM: 1, every: 75, burst: 3, wave: 40 }, flag_hard: { incomeM: 1.25, every: 75, burst: 3, wave: 40 } };
 // THE SURGE LEVER: meter per energy of enemy bodies killed - 1,667 energy of kills at mult 1 fills the meter. The one number tools/timeline.js moves (3.5 → 6) until the meter is full on both sides before the first gate hit in six matches of eight; it rides in as DEFAULTS.surgePerEnergy.
 // Seated at the walk's top on the measure of 2026-09-25: with the columns marching (below) the first gate hit lands at 17-95 s, and at 4 the captains' meters were full before it in four matches of eight, at 6 in six to eight.
 export const SURGE_PER_ENERGY = 6;
+// THE UPGRADES a commander picks one of three every o.boonEvery seconds (v0.7): what each does lives in takeBoon()
+export const BOON_IDS = ['hull', 'guns', 'ward', 'engines', 'pay', 'surge'];
 export const DEFAULTS = {
   W, H,                                        // the field, from lanes.js
   energy0: 800, incomePerTower: 6,             // a shared pool a side; each living stronghold pays into it every second
@@ -58,6 +62,9 @@ export const DEFAULTS = {
   doomV: 1500, doomTail: 2.5,                  // the doom wave's speed and the seconds after it passes the far corner before the result
   capUnits: 30000, capShots: 80000, capMines: 6000, cell: 96,
   seed: 1, deck: 8,
+  // THE FLAGSHIPS (v0.7): off unless asked; the page asks. flagBack: seconds a sunk flagship takes to rebuild at the keeps; wardR/wardMul: the ring
+  // inside which its side's bodies take wardMul of every hit; flagRegen: its repair per second, a share of its hull; flagKill: the meter for sinking one
+  flagships: false, flagBack: 10, wardR: 520, wardMul: 0.6, flagRegen: 0.015, flagKill: 3000, boonEvery: 40,
   temper: 'normal',                            // the east captain's temper (its income multiplier); the west is the person
 };
 const KILL_SPAN = 90;   // the kills ring remembers three seconds of ticks per lane
@@ -106,7 +113,7 @@ export function createSim(opts = {}) {
     // the march: the lane a body belongs to for life, the x it was sent to, its slot in the formation, the hold clock, the quiet clock, the stage, the DEFEND flag
     lane: new Uint8Array(N), goalX: new Float32Array(N), slotF: new Float32Array(N), slotS: new Float32Array(N), holdUntil: new Float32Array(N), quiet: new Float32Array(N), stage: new Uint8Array(N), defend: new Uint8Array(N),
     // the epic: a shockwave's push (a velocity and the seconds left of it), BLINK's charged shots, the second the doom wave takes the body (0 = never)
-    pushX: new Float32Array(N), pushY: new Float32Array(N), pushT: new Float32Array(N), charge: new Uint8Array(N), doomAt: new Float32Array(N),
+    pushX: new Float32Array(N), pushY: new Float32Array(N), pushT: new Float32Array(N), charge: new Uint8Array(N), doomAt: new Float32Array(N), flag: new Uint8Array(N),
     hi: 0, free: [], count: [0, 0],
   };
   const laneAlive = new Uint16Array(6);   // alive bodies of a side in a lane (team·3 + lane): a lane with none of theirs holds no target for a body in the run
@@ -215,7 +222,14 @@ export function createSim(opts = {}) {
     stats: { deployed: [0, 0], musters: [0, 0], kills: [0, 0], spent: [0, 0], towerDmg: [0, 0], roleKills: [new Uint32Array(36), new Uint32Array(36)], captures: [0, 0], centres: [0, 0], shatters: [0, 0], surges: [0, 0], waves: [0, 0] },
   };
   const surgeOpen = [false, false];   // a surge whose eight seconds have not yet been closed out
-  const gatesUp = [3, 3];              // the gates a side still has standing: THE OPEN KEEPS (hurtTower) read it
+  const gatesUp = [3, 3];
+  // THE FLAGSHIPS (v0.7): the body each side's commander flies (-1 while it rebuilds), where it is steered, when it is back, and the side's upgrades
+  const FLAG = kinds.findIndex((k) => k.id === 'FLAGSHIP');
+  const F = {
+    i: [-1, -1], steer: [[GATE_X[0] - 300, LANE_Y[1]], [GATE_X[1] + 300, LANE_Y[1]]], back: [0, 0], downs: [0, 0], boons: [[], []],
+    hpM: [1, 1], dmgM: [1, 1], wardM: [1, 1], spdM: [1, 1], payM: [1, 1], surgeM: [1, 1],
+  };
+  S.flags = F;              // the gates a side still has standing: THE OPEN KEEPS (hurtTower) read it
   const EV_CAP = 2400;
   // the flood (hits, shots, sparks) is capped a tick so a big war cannot drown a frame; the moments (deaths, musters, captures, shatters, the surge, the wave, the doom, the end) always land
   const ev = (e) => { if (S.events.length < EV_CAP) S.events.push(e); };
@@ -227,7 +241,7 @@ export function createSim(opts = {}) {
   // THE METER HOLDS while its side's surge runs: the kills and captures a surge makes do not refill it. They did, at the full rate, and a surge
   // ended 30-100 % full - thirty surges a match, a plate up more than half the time - so the peak the match is built toward became routine. The
   // breach's +2,500 (breakLane) is the one fill that lands mid-surge: §0's peak has the meter jump at the shatter the surge made.
-  const fillSurge = (team, amt) => { if (!surgeLive(team)) addSurge(team, amt); };
+  const fillSurge = (team, amt) => { if (!surgeLive(team)) addSurge(team, amt * F.surgeM[team]); };
   // a body is surging while its side's surge runs in its lane: one branch per body in move, fire and hurt
   const surging = (i) => surgeLive(U.team[i]) && U.lane[i] === S.surgeLane[U.team[i]];
 
@@ -244,7 +258,7 @@ export function createSim(opts = {}) {
     U.hp[i] = k.hp; U.sh[i] = k.shieldMax; U.cd[i] = rng() * 0.5; U.age[i] = 0; U.ph[i] = rng() * 6.283; U.stun[i] = 0;
     U.kind[i] = kind; U.team[i] = team; U.alive[i] = 1; U.target[i] = -1; U.goal[i] = -1; U.grp[i] = grp; U.clutch[i] = k.w.type === 'spawn' ? (k.w.clutch || 24) : 0;
     U.lane[i] = lane; U.goalX[i] = goalX; U.slotF[i] = slotF; U.slotS[i] = slotS; U.holdUntil[i] = 0; U.quiet[i] = 0; U.stage[i] = stage; U.defend[i] = defend;
-    U.pushX[i] = 0; U.pushY[i] = 0; U.pushT[i] = 0; U.charge[i] = 0;
+    U.pushX[i] = 0; U.pushY[i] = 0; U.pushT[i] = 0; U.charge[i] = 0; U.flag[i] = 0;
     // born under the doom (a hive's child, a bloom's motes): the wave takes it when it passes
     U.doomAt[i] = S.doom && S.doom.team === team ? S.doom.at + Math.sqrt((x - S.doom.x) ** 2 + (y - S.doom.y) ** 2) / o.doomV : 0;
     U.count[team]++; laneAlive[team * 3 + lane]++;
@@ -257,6 +271,11 @@ export function createSim(opts = {}) {
     if (!U.alive[i]) return;
     const k = kinds[U.kind[i]], team = U.team[i], lane = U.lane[i];
     U.alive[i] = 0; U.count[team]--; laneAlive[team * 3 + lane]--; U.free.push(i); unpicket(i);
+    if (U.flag[i]) {   // a flagship sunk: it rebuilds at the keeps, and the side that sank it takes a third of a meter
+      U.flag[i] = 0; F.i[team] = -1; F.back[team] = S.time + o.flagBack; F.downs[team]++;
+      if (byTeam >= 0 && byTeam !== team) addSurge(byTeam, o.flagKill);
+      evSure({ t: 'flagDown', team, x: U.x[i], y: U.y[i], by: byTeam, back: o.flagBack });
+    }
     if (byTeam >= 0 && byTeam !== team) {
       S.stats.kills[byTeam]++; if (byKind >= 0) S.stats.roleKills[byTeam][roleOf(byKind) * 6 + k.shape]++;
       fillSurge(byTeam, k.cost * o.surgePerEnergy / mult());
@@ -276,6 +295,7 @@ export function createSim(opts = {}) {
   function hurt(i, dmg, byTeam, hx, hy, byKind) {
     if (!U.alive[i] || dmg <= 0) return;
     if (kinds[U.kind[i]].shape === 1 && surging(i)) dmg *= 0.5;   // BULWARK: a surging square takes half
+    if (F.i[0] >= 0 || F.i[1] >= 0) dmg = flagHurt(i, dmg, byKind, byTeam);
     if (U.sh[i] > 0) { const a = Math.min(U.sh[i], dmg); U.sh[i] -= a; dmg -= a; if (dmg <= 0) { ev({ t: 'shield', x: hx, y: hy, team: U.team[i] }); return; } }
     U.hp[i] -= dmg; S.lastHit = S.time;
     ev({ t: 'hit', x: hx, y: hy, team: U.team[i], dmg, i });
@@ -285,6 +305,7 @@ export function createSim(opts = {}) {
   // it surges at - the breach itself; every other shot, a surging lane's on a keep or on another lane's gate included, is scaled by THE WALL
   function hurtTower(t, dmg, byTeam, byKind, byLane) {
     if (!T.alive[t]) return;
+    if (byKind === FLAG && byTeam >= 0) dmg *= F.dmgM[byTeam];
     const breach = T.kind[t] === 0 && T.lane[t] === byLane && surgeLive(byTeam) && S.surgeLane[byTeam] === byLane;
     if (kinds[byKind].shape === 3) { if (T.kind[t]) dmg *= o.keepSiege; }
     else if (!breach) dmg *= T.kind[t] ? (gatesUp[T.team[t]] ? o.keepWall : o.keepOpen) : o.wall;
@@ -383,6 +404,8 @@ export function createSim(opts = {}) {
     if (S.result || !cmd) return false;
     const team = cmd.team | 0; if (team < 0 || team > 1) return false;
     if (S.doom && S.doom.team === team) return false;   // the doomed side gives no more orders
+    if (cmd.op === 'steer') return steer(team, cmd);
+    if (cmd.op === 'boon') return takeBoon(team, cmd.id);
     if (cmd.op === 'surge') return fireSurge(team, cmd.lane | 0);
     if (cmd.op === 'wave') return announceWave(team, cmd);
     if (cmd.op !== 'deploy' || (cmd.batt === undefined && cmd.kind === undefined)) return false;
@@ -431,10 +454,10 @@ export function createSim(opts = {}) {
     const b = deck[bi]; if (!b) return false;
     const price = Math.round(b.cost * mult());
     if (!cmd.free && S.energy[team] < price) return false;
-    const { list, big } = musterList(b), sp = big * 2.6, atGate = T.kind[from] === 0;
+    const launched = carrier(team, order.lane), { list, big } = musterList(b), sp = big * 2.6, atGate = launched || T.kind[from] === 0;
     slotBuf.length = 0; slots(list.length, b.form, sp, rng, atGate ? HALF - big - 20 : Infinity, slotBuf);
     if (atGate) foldToBand(slotBuf, big, sp);
-    musterOrigin(from, team, order.lane);
+    if (!launched) musterOrigin(from, team, order.lane);
     const grp = S.grpN++ & 0xffff;
     let born = 0;
     for (let i = 0; i < list.length; i++) { const [f, s] = slotBuf[i]; if (spawnUnit(team, list[i], mx + mfx * f - mfy * s, my + mfy * f + mfx * s, order.lane, grp, order.goalX, f, s, order.stage, order.defend) >= 0) born++; }
@@ -449,7 +472,7 @@ export function createSim(opts = {}) {
     const k = kinds[kind]; if (!k) return false;
     const price = Math.round(k.cost * mult());   // the clock scales every price, a lone body's too
     if (!cmd.free && S.energy[team] < price) return false;
-    musterOrigin(from, team, order.lane);
+    if (!carrier(team, order.lane)) musterOrigin(from, team, order.lane);
     const a = rng() * 6.283, d = rng() * 40;
     const i = spawnUnit(team, kind, mx + Math.cos(a) * d, my + Math.sin(a) * d, order.lane, 0, order.goalX, 0, 0, order.stage, order.defend);
     if (i < 0) return false;
@@ -1019,6 +1042,64 @@ export function createSim(opts = {}) {
     if (e !== F.e[l]) { const dir = e < F.e[l] ? 1 : -1; F.e[l] = e; F.chevE[l] = -dir; if (dir > 0) F.moved[l] = { team: 1, at: S.time }; evSure({ t: 'front', lane: l, team: 1, dir, x: e }); }
   }
 
+  // ---- THE FLAGSHIPS (v0.7)
+  // born (and reborn) between its side's keeps, steered a little forward of them
+  function spawnFlag(team) {
+    const x = team === 0 ? KEEP_X[0] + 250 : KEEP_X[1] - 250, y = LANE_Y[1];
+    const i = spawnUnit(team, FLAG, x, y, 1, 0, x, 0, 0, 5, 0); if (i < 0) return;
+    U.flag[i] = 1; U.hp[i] = K.hp[FLAG] * F.hpM[team]; F.i[team] = i; F.steer[team] = [x + (team ? -400 : 400), y];
+    evSure({ t: 'flagUp', team, x, y });
+  }
+  // THE HELM: a steer point anywhere on the field; the flagship flies there over lanes and void alike
+  function steer(team, cmd) {
+    if (!o.flagships) return false;
+    const x = +cmd.x, y = +cmd.y; if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    F.steer[team] = [Math.max(40, Math.min(W - 40, x)), Math.max(40, Math.min(H - 40, y))];
+    return true;
+  }
+  // THE UPGRADES: one of BOON_IDS, taken for the rest of the match
+  function takeBoon(team, id) {
+    if (!o.flagships || !BOON_IDS.includes(id)) return false;
+    if (id === 'hull') { F.hpM[team] *= 1.35; const f = F.i[team]; if (f >= 0) U.hp[f] = K.hp[FLAG] * F.hpM[team]; }   // a bigger hull, repaired whole
+    else if (id === 'guns') F.dmgM[team] *= 1.4;
+    else if (id === 'ward') F.wardM[team] *= 1.3;
+    else if (id === 'engines') F.spdM[team] *= 1.25;
+    else if (id === 'pay') F.payM[team] *= 1.2;
+    else F.surgeM[team] *= 1.5;
+    F.boons[team].push(id); evSure({ t: 'boon', team, id });
+    return true;
+  }
+  // THE WARD and THE GUNS: a hit from a flagship lands at its side's gun upgrade; a body inside its own flagship's ward takes wardMul of a hit
+  function flagHurt(i, dmg, byKind, byTeam) {
+    if (byKind === FLAG && byTeam >= 0) dmg *= F.dmgM[byTeam];
+    const t = U.team[i], f = F.i[t];
+    if (f >= 0 && f !== i) { const dx = U.x[i] - U.x[f], dy = U.y[i] - U.y[f], r = o.wardR * F.wardM[t]; if (dx * dx + dy * dy < r * r) dmg *= o.wardMul; }
+    return dmg;
+  }
+  // THE CARRIER: an order into the lane a side's flagship flies nearest is launched out of the flagship, facing the enemy - the army is born
+  // where its commander is, so where he flies is where the war is
+  function carrier(team, lane) {
+    const f = F.i[team]; if (f < 0 || U.lane[f] !== lane) return false;
+    mfx = team === 0 ? 1 : -1; mfy = 0; mx = U.x[f] - mfx * 40; my = U.y[f];
+    return true;
+  }
+  // THE FLIGHT: straight at the steer point, easing in, never band-clamped; the lane it flies nearest is its lane (its guns and its launches)
+  function flagMove(i, kind, dt) {
+    const team = U.team[i], st = F.steer[team], x0 = U.x[i], y0 = U.y[i];
+    const dx = st[0] - x0, dy = st[1] - y0, d = Math.sqrt(dx * dx + dy * dy);
+    const spd = K.speed[kind] * F.spdM[team] * (U.stun[i] > 0 ? 0.3 : 1);
+    let wx = 0, wy = 0;
+    if (d > 8) { const v = Math.min(spd, d * 3); wx = (dx / d) * v; wy = (dy / d) * v; }
+    if (U.pushT[i] > 0) { U.pushT[i] -= dt; U.vx[i] = U.pushX[i] * 0.3; U.vy[i] = U.pushY[i] * 0.3; }   // a shockwave rocks it, a third as hard
+    else { const ease = Math.min(1, dt * 6); U.vx[i] += (wx - U.vx[i]) * ease; U.vy[i] += (wy - U.vy[i]) * ease; }
+    const nx = Math.fround(Math.max(40, Math.min(W - 40, x0 + U.vx[i] * dt))), ny = Math.max(40, Math.min(H - 40, y0 + U.vy[i] * dt));
+    U.x[i] = nx; U.y[i] = ny;
+    const nl = laneOf(ny);
+    if (nl !== U.lane[i]) { laneAlive[team * 3 + U.lane[i]]--; laneAlive[team * 3 + nl]++; U.lane[i] = nl; }
+    if (i < gridHi && grid.cellOf[i] >= 0) { const mxd = nx - x0, myd = ny - y0; if (mxd !== 0 || myd !== 0) slackOf(grid.cellOf[i], Math.sqrt(mxd * mxd + myd * myd)); }
+    return U.target[i] !== -1 && targetPos(i) ? Math.sqrt((tx - nx) ** 2 + (ty - ny) ** 2) : Infinity;
+  }
+
   // ---- the tick
   function step() {
     if (S.result) return;
@@ -1032,7 +1113,7 @@ export function createSim(opts = {}) {
     for (let t = 0; t < T.n; t++) if (T.alive[t]) { if (T.team[t] === 0) inc0 += o.incomePerTower; else inc1 += o.incomePerTower; }
     for (let w = 0; w < WL.n; w++) { const pay = WL.slot[w] === CENTRE ? o.centreIncome : o.cpIncome; if (WL.owner[w] === 0) inc0 += pay; else if (WL.owner[w] === 1) inc1 += pay; }
     const esc = mult(), tm = (TEMPERS[o.temper] || TEMPERS.normal).incomeM;
-    inc0 *= esc; inc1 *= esc * tm;
+    inc0 *= esc * F.payM[0]; inc1 *= esc * tm * F.payM[1];
     S.income[0] = inc0; S.income[1] = inc1; S.energy[0] += inc0 * dt; S.energy[1] += inc1 * dt;
     for (let team = 0; team < 2; team++) {
       if (surgeOpen[team] && S.time >= S.surgeUntil[team]) { surgeOpen[team] = false; surgeClose(team); }
@@ -1041,6 +1122,7 @@ export function createSim(opts = {}) {
     const slot = S.tick % KILL_SPAN;
     for (let l = 0; l < 3; l++) { const ring = S.killsRing.slots[l]; S.killsRing.sum[l] -= ring[slot]; ring[slot] = 0; }
     grid.build(U.x, U.y, U.alive, U.hi); contact.build(U.x, U.y, U.alive, U.hi); gridHi = U.hi; splitSides(); slack.fill(0); rowSlack.fill(0);
+    if (o.flagships) for (let t = 0; t < 2; t++) if (F.i[t] < 0 && S.time >= F.back[t] && standing(t) && !(S.doom && S.doom.team === t)) spawnFlag(t);
     readVanguards();
     const hi = U.hi, tick = S.tick;
     for (let i = 0; i < hi; i++) {
@@ -1049,11 +1131,13 @@ export function createSim(opts = {}) {
       const kind = U.kind[i], shape = K.shape[kind], hp = K.hp[kind], shMax = K.shieldMax[kind];
       U.age[i] += dt; U.cd[i] -= dt; if (U.stun[i] > 0) U.stun[i] -= dt;
       if (K.regen[kind] && U.hp[i] < hp) U.hp[i] = Math.min(hp, U.hp[i] + hp * 0.02 * dt);
+      if (U.flag[i]) { const top = hp * F.hpM[U.team[i]]; if (U.hp[i] < top) U.hp[i] = Math.min(top, U.hp[i] + top * o.flagRegen * dt); }
       if (shMax && U.sh[i] < shMax) U.sh[i] = Math.min(shMax, U.sh[i] + shMax * 0.08 * dt);
       if (U.target[i] === -1 ? ((tick + i) % 6 === 0) : (((tick + i) % 6 === 0) || !targetPos(i))) retarget(i, kind);
       const sg = surging(i), seen = U.target[i] === -1 ? sightOf(i) : -1;
-      march(i, dt, seen);
-      const dist = move(i, kind, dt, sg, seen);
+      let dist;
+      if (U.flag[i]) dist = flagMove(i, kind, dt);   // the flagship answers its helm, not the march
+      else { march(i, dt, seen); dist = move(i, kind, dt, sg, seen); }
       if (K.magnet[kind]) { const range = K.range[kind], x = U.x[i], y = U.y[i]; nearSide(x, y, range, 1 - U.team[i], (j) => { if (U.alive[j]) { const dx = x - U.x[j], dy = y - U.y[j], d = Math.sqrt(dx * dx + dy * dy) || 1; if (d < range) { U.vx[j] += dx / d * 20; U.vy[j] += dy / d * 20; } } return false; }); }
       if (K.kamikaze[kind] && dist < K.r[kind] + tr + 4) { const t = U.target[i], lane = U.lane[i]; blast(U.x[i], U.y[i], 70, 30, U.team[i], kind, lane); if (t <= -2) hurtTower(-2 - t, 40, U.team[i], kind, lane); ev({ t: 'explode', x: U.x[i], y: U.y[i], r: 70, team: U.team[i], kind }); killUnit(i, -1, -1); continue; }
       const minR = sg && shape === 3 ? 0 : K.minRange[kind];   // BARRAGE: no blind ring
@@ -1106,12 +1190,14 @@ export function createSim(opts = {}) {
       wave: S.wave.map((wv) => (wv ? { n: wv.n, lane: wv.lane, roles: wv.roles.slice(), name: wv.name, inS: +Math.max(0, (wv.at - S.tick) / 30).toFixed(1) } : null)),
       counts: [Array.from(counts[0]), Array.from(counts[1])], fielded, alive: [U.count[0], U.count[1]],
       decks: decks.map((d) => d.map((b) => ({ id: b.id, role: b.role, cost: b.cost }))),
+      flags: o.flagships ? [0, 1].map((t) => { const f = F.i[t]; return f >= 0 ? { x: Math.round(U.x[f]), y: Math.round(U.y[f]), lane: U.lane[f], hp: Math.round(U.hp[f]), hpMax: Math.round(K.hp[FLAG] * F.hpM[t]), boons: F.boons[t].slice() } : { down: +Math.max(0, F.back[t] - S.time).toFixed(1), boons: F.boons[t].slice() }; }) : null,
       result: S.result,
     };
   }
 
   return {
-    S, o, kinds, decks, U, P, MN, T, WL, grid, TICK, battById,
+    S, o, kinds, decks, U, P, MN, T, WL, grid, TICK, battById, flags: F, FLAG,
+    flagTop: (t) => K.hp[FLAG] * F.hpM[t], wardR: (t) => o.wardR * F.wardM[t],
     step, apply, queue: (cmd) => S.queue.push(cmd), snapshot, mult, price: (b) => Math.round(b.cost * mult()), formation, laneOf, front: () => S.front,
     get result() { return S.result; },
     get events() { return S.events; },

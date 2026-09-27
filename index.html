@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>TRAX: VECTOR</title>
-<meta name="description" content="THE BREACH. Three lanes between two sides' gates; drag a card onto a lane and a battalion marches; the fronts move checkpoint by checkpoint; a gate at zero shatters.">
+<meta name="description" content="THE FLAGSHIP. Fly your carrier with a finger or the mouse; your army launches out of it wherever you go and holds inside its shield ring; the enemy has one too. Pick an upgrade every forty seconds, fire the surge, break their gates.">
 <style>
   /* THE GLASS (SPEC §1, §4.1). Three glasses by media rule: portrait (orientation: portrait), landscape
      (max-width: 999px) and (orientation: landscape), desk otherwise - the same rule main.js judges into
@@ -103,6 +103,27 @@
   @media (orientation: portrait) { #hand { grid-template-columns: repeat(4, minmax(0, 89px)); grid-auto-rows: 92px; gap: 6px; padding: 0 8px calc(12px + env(safe-area-inset-bottom, 0px)); } }
   @media (max-width: 999px) and (orientation: landscape) { #hand { grid-template-columns: repeat(8, minmax(0, 98px)); grid-auto-rows: 64px; gap: 4px; padding: 6px calc(8px + var(--sar)) calc(6px + env(safe-area-inset-bottom, 0px)) calc(8px + var(--sal)); } }
 
+  /* v0.7 THE FLAGSHIP: the hand keeps its place (the field's rect is measured to it) but its cards give way to the tray */
+  #tray { display: none; }
+  body.flags #hand .card { visibility: hidden; }
+  body.flags #hand { pointer-events: none; }
+  body.flags #tray { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 9; gap: 10px; align-items: stretch; box-sizing: border-box; padding: 6px calc(8px + var(--sar)) calc(6px + env(safe-area-inset-bottom, 0px)) calc(8px + var(--sal)); background: var(--chrome); border-top: 1px solid var(--line); color: var(--ink); font-family: inherit; }
+  #tray .hull, #tray .armies { flex: 0 0 22%; display: flex; flex-direction: column; justify-content: center; gap: 4px; font-size: 11px; letter-spacing: .08em; }
+  #tray .hull b, #tray .armies b { font-size: 12px; font-weight: 800; }
+  #tray .hull i { display: block; height: 10px; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+  #tray .hull span { display: block; height: 100%; width: 100%; background: var(--west); }
+  #tray .hull span.low { background: #FF4D4D; }
+  #tray .hull em, #tray .armies em { font-style: normal; opacity: .7; }
+  #tray .armies { align-items: flex-end; text-align: right; }
+  #tray .offer { flex: 1; display: flex; gap: 8px; align-items: stretch; justify-content: center; min-width: 0; }
+  #tray .offer p { align-self: center; margin: 0; font-size: 12px; letter-spacing: .1em; opacity: .75; }
+  #tray .offer p b { color: var(--gold); }
+  #tray .offer button { flex: 1 1 0; max-width: 200px; min-height: 44px; position: relative; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 4px 8px; border: 1px solid var(--gold); border-radius: 8px; background: rgba(255, 215, 106, .08); color: var(--ink); font: inherit; text-align: left; cursor: pointer; animation: surgeready .9s ease-in-out infinite; }
+  #tray .offer button b { font-size: 13px; font-weight: 800; color: var(--gold); letter-spacing: .06em; }
+  #tray .offer button i { font-style: normal; font-size: 11px; opacity: .8; }
+  #tray .offer button u { position: absolute; top: 3px; right: 6px; text-decoration: none; font-size: 10px; opacity: .6; }
+  @media (orientation: portrait) { body.flags #hand { grid-auto-rows: 46px; } }
+  @media (orientation: portrait) { body.flags #tray { flex-wrap: wrap; } #tray .hull, #tray .armies { flex: 1 1 40%; } #tray .offer { flex: 1 1 100%; order: 3; } }
   .card { position: relative; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; padding: 4px 6px 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--pane); color: var(--ink); cursor: pointer; touch-action: none; transition: transform 80ms ease-out, opacity 150ms; will-change: transform; }
   .card .top { display: flex; align-items: center; justify-content: space-between; height: 26px; }
   .card .ico { display: block; width: 22px; height: 22px; }
@@ -196,7 +217,8 @@
   <div id="lanes"><button class="lane" data-lane="0" type="button"><b class="k">T</b><span class="ar">—</span></button><button class="lane" data-lane="1" type="button"><b class="k">C</b><span class="ar">—</span></button><button class="lane" data-lane="2" type="button"><b class="k">B</b><span class="ar">—</span></button></div>
 </div>
 <button id="more" type="button" aria-label="more">⋯</button>
-<div id="sheet"><button id="sound" type="button">SOUND ON</button><button id="temper" type="button">NORMAL</button><div id="stamp">v0.6.0 · VECTOR · THE BREACH</div></div>
+<div id="tray"></div>
+<div id="sheet"><button id="sound" type="button">SOUND ON</button><button id="temper" type="button">NORMAL</button><div id="stamp">v0.7.0 · VECTOR · THE FLAGSHIP</div></div>
 <div id="surge"><div class="bar"></div><div class="txt">0%</div></div>
 <div id="plate"></div>
 <div id="banner"><span class="txt"></span><span class="right"></span><span class="sub"></span></div>
