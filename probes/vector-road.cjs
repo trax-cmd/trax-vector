@@ -15,7 +15,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const GLASS = process.argv[2] || 'phone';
-const URL0 = process.env.VECTOR_URL || 'http://127.0.0.1:8897/index.html';
+const URL0 = process.env.VECTOR_URL || 'http://127.0.0.1:8897/breach.html';
 const SHOTS = path.join(ROOT, 'probes', 'shots');
 // §1: the three glasses and their numbers, read back with ±1
 const GLASSES = {

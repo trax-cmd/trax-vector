@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "vector", "runtimeExecutable": "node", "runtimeArgs": ["tools/serve.js"], "env": { "PORT": "8897" }, "port": 8897 }
+  ]
+}

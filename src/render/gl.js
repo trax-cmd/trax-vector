@@ -309,6 +309,40 @@ ${jolt ? `  {   // §2.7: the ground displaced radially from the shatter, amp·s
   o = vec4(c, 1.0);
 }`;
 
+// THE OPEN GROUND (THE WAR): no lanes - the field's ground with its 1,000 grid (the 250 grid at battle zooms), and the
+// territory: each pixel takes the colour of the nearest outpost within its reach, a side's at 0.10, so the map's control
+// reads at a glance; the border between two sides' land is a thin line of the nearer side's edge colour.
+const OPEN_N = 64;
+const OPEN_FS = `#version 300 es
+precision highp float;
+in vec2 vW;
+uniform vec2 uField; uniform vec4 uPx; uniform int uN;
+uniform vec4 uNode[${OPEN_N}];   // x, y, owner (-1 none, 0 west, 1 east), reach
+out vec4 o;
+const vec3 OUTSIDE = ${v3(PALETTE.outside)}, GROUND = ${v3(PALETTE.ground)}, GRID1 = ${v3(PALETTE.grid250)}, GRID4 = ${v3(PALETTE.grid1000)};
+const vec3 WF = ${v3(PALETTE.westFill)}, EF = ${v3(PALETTE.eastFill)}, WE = ${v3(PALETTE.westEdge)}, EE = ${v3(PALETTE.eastEdge)};
+float cover(float g, float hw) { return clamp((hw + 0.5 * uPx.y - g) * uPx.z, 0.0, 1.0); }
+float gridAt(float v, float inv, float period) { return abs(fract(v * inv + 0.5) - 0.5) * period; }
+void main() {
+  vec2 w = vW;
+  if (w.x < 0.0 || w.x > uField.x || w.y < 0.0 || w.y > uField.y) { o = vec4(OUTSIDE, 1.0); return; }
+  float d1 = 1e9, d2 = 1e9; int o1 = -1, o2 = -1;
+  for (int i = 0; i < ${OPEN_N}; i++) {
+    if (i >= uN) break;
+    vec4 n = uNode[i];
+    float d = length(w - n.xy) / n.w;
+    if (d < d1) { d2 = d1; o2 = o1; d1 = d; o1 = int(n.z); } else if (d < d2) { d2 = d; o2 = int(n.z); }
+  }
+  vec3 c = GROUND;
+  if (uPx.w > 0.5) c = mix(c, GRID1, cover(min(gridAt(w.x, 0.004, 250.0), gridAt(w.y, 0.004, 250.0)), 0.5 * uPx.y));
+  c = mix(c, GRID4, cover(min(gridAt(w.x, 0.001, 1000.0), gridAt(w.y, 0.001, 1000.0)), 0.5 * uPx.y));
+  if (d1 < 1.0 && o1 >= 0) {
+    c = mix(c, o1 == 0 ? WF : EF, 0.10 * (1.0 - smoothstep(0.75, 1.0, d1)));
+    if (o2 >= 0 && o2 != o1 && d2 < 1.0) { float gap = (d2 - d1) * 900.0; c = mix(c, o1 == 0 ? WE : EE, 0.45 * cover(gap, 1.0 * uPx.x)); }   // the front: where two sides' land meets
+  }
+  o = vec4(c, 1.0);
+}`;
+
 function compile(gl, vs, fs) {
   const p = gl.createProgram();
   for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
@@ -362,6 +396,7 @@ export function createRenderer(canvas) {
   const miniP = program(gl, SHAPE_VS, MINI_FS, SHAPE_UNIFORMS);
   const lineP = program(gl, LINE_VS, LINE_FS, ['uRec', 'uCam', 'uZoom']);
   const fieldP = [program(gl, FIELD_VS, fieldFs(false), FIELD_UNIFORMS), program(gl, FIELD_VS, fieldFs(true), FIELD_UNIFORMS)];
+  const openP = program(gl, FIELD_VS, OPEN_FS, ['uInv', 'uField', 'uPx', 'uN', 'uNode[0]']);
   for (const P of [...shapeP, miniP]) { gl.useProgram(P.prog); gl.uniform1fv(P.u['uFloor[0]'], FLOOR); gl.uniform1fv(P.u['uRmin[0]'], RMIN); gl.uniform1f(P.u.uMini, P === miniP ? 1 : 0); gl.uniform1i(P.u.uRec, 0); }
   gl.useProgram(lineP.prog); gl.uniform1i(lineP.u.uRec, 0);
   const shapes = stream(gl, MAX_SHAPES), sparks = stream(gl, MAX_SPARKS), lines = stream(gl, MAX_LINES);
@@ -419,6 +454,15 @@ export function createRenderer(canvas) {
 
   // the scissor in physical px from a css rect (GL counts rows from the bottom)
   function scissor(r) { gl.scissor(Math.round(r.x * dpr), Math.round((ch - r.y - r.h) * dpr), Math.round(r.w * dpr), Math.round(r.h * dpr)); }
+  // THE WAR's ground: view.open = { nodes: Float32Array(4·n), n }
+  function drawOpen(view) {
+    const field = view.field, cssPx = 1 / view.zoom, phPx = cssPx / dpr, op = view.open;
+    gl.useProgram(openP.prog);
+    gl.uniformMatrix3fv(openP.u.uInv, false, inv); gl.uniform2f(openP.u.uField, field.W, field.H);
+    gl.uniform4f(openP.u.uPx, cssPx, phPx, 1 / phPx, view.zoom > 0.22 ? 1 : 0);
+    gl.uniform1i(openP.u.uN, Math.min(OPEN_N, op.n)); gl.uniform4fv(openP.u['uNode[0]'], op.nodes);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
   function drawField(view, time) {
     const field = view.field || { W: 9000, H: 5000 }, j = view.jolt, cssPx = 1 / view.zoom, phPx = cssPx / dpr;
     for (let l = 0; l < 3; l++) {
@@ -510,7 +554,7 @@ export function createRenderer(canvas) {
     gl.viewport(0, 0, vw, vh); gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
     gl.enable(gl.SCISSOR_TEST); scissor(view.rect || { x: 0, y: 0, w: cw, h: ch });
     setCamera(affine(view, cw, ch, TMP), cw, ch);
-    drawField(view, time);
+    if (view.open) drawOpen(view); else drawField(view, time);
     shapes.n = 0; sparks.n = 0; lines.n = 0;
     fill(out);
     counts = { shapes: shapes.n, sparks: sparks.n, lines: lines.n };
